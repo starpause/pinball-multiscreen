@@ -24,7 +24,7 @@ cd "tic80 build/claude"
 python build.py
 ```
 
-Then load `fairy_ring.tic` in TIC-80. Headless tests: `python tests/run_tests.py <outdir>` (needs TIC-80 at `C:\Program Files\tic80-v1.3-win.exe`, or set `TIC80`).
+Then load `fairy_ring.tic` in TIC-80. Controls follow Revenge of the 'Gator: any **D-pad** direction is the left flipper, **A/B** (Z/X keys) is the right flipper, and **X/Y** (A/S keys) nudges. Headless tests: `python tests/run_tests.py <outdir>` (needs TIC-80 at `C:\Program Files\tic80-v1.3-win.exe`, or set `TIC80`).
 
 ## Not in this repo
 

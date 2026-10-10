@@ -7,6 +7,12 @@ in `research/1999 Pokemon Pinball (GBC)/Disassembly of Pokémon Pinball`, and ho
 The full research reports, with asm quotes and `file:line` citations, are in
 [research_notes/](research_notes/). This file is the short, practical version.
 
+> **Update:** the cart is now an endless tower of generated one-screen tables;
+> see [TABLE_GEN.md](TABLE_GEN.md). The physics described here (ring probe,
+> bounce, swept flippers, baking) is unchanged. The two-screen layout,
+> plunger and fixed objects described in sections 6–7 belong to the first
+> draft (in git history).
+
 ## Files
 
 | File | What it is |

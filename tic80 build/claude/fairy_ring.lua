@@ -1,33 +1,39 @@
 -- title:   Fairy Ring Pinball
 -- author:  jordan + claude
--- desc:    two-screen pinball; engine modeled on Pokemon Pinball (GBC)
+-- desc:    an endless tower of one-screen pinball tables
 -- script:  lua
 
--- How it works (see ENGINE_NOTES.md for the long version):
---  * The table is a per-pixel COLLISION MAP (cmap), one attribute byte per
---    pixel. It is painted at boot with TIC-80 primitives, read back with
---    pix(), so what you draw is exactly what the ball collides with.
---  * The ball is tested at 16 points on a radius-4 ring. The longest run of
---    touching points gives the surface normal and a push-out distance.
---  * Bounce: rotate velocity into the normal's frame, keep the tangent,
---    keep 1/4 (walls), 3/8 (flippers) or 1/2 (rubber) of the normal speed,
---    then add any kicker force. One physics step per frame, movement clamped
---    to 5 px/frame per axis so the ring cannot skip over a wall.
---  * Flippers are 16 discrete states. Collision checks every state between
---    last frame's and this frame's (a swept test), and the kick scales with
---    distance from the pivot.
---  * Two screens. Each screen's static art is baked once into map RAM
---    (exactly two 240x136 screens fit) and memcpy'd back every frame.
+-- Design (see ENGINE_NOTES.md and TABLE_GEN.md):
+--  * Every table is ONE screen with its own flippers (Revenge of the
+--    'Gator / Kirby's Pinball Land / Infinity Pinball). Shoot out of the
+--    top opening to climb to the next table; fall out of the bottom and
+--    you drop to the table below.
+--  * Tables are generated the way Infinity Pinball does it: authored
+--    half-wall PIECES (mirrored, mixed left/right) + a fixed bottom KIT
+--    (flippers, slings, inlanes, outlanes) + toys scattered on a grid with
+--    clearance margins + 1-3 trigger->reward GOALS. Gentle tables 0-3,
+--    a bonus "fairy court" every 10th table that becomes your checkpoint.
+--  * Physics is the Pokemon Pinball engine: per-pixel collision map,
+--    16-point ring probe, rotate-into-normal bounce, swept 16-state
+--    flippers. Kickers use Infinity's rule: reset velocity, fixed kick.
 
 -- ============================ constants ============================
-local GRAV    = 11/256   -- px/frame^2 (Pokemon Pinball: +$000B per frame)
+local GRAV    = 0.06     -- px/frame^2 (Infinity: 34.3 u/s^2 at 6.8 px/u)
 local VMAX    = 7.99     -- per-axis velocity clamp
-local STEPMAX = 4.996    -- per-axis movement clamp ($04FF)
+local STEPMAX = 4.996    -- per-axis movement clamp: the ring can't skip 5px walls
 local BR      = 4        -- ball radius = ring probe radius
-local WW, WH  = 176, 256 -- world (playfield + plunger lane)
-local VIEWS   = {0, 120} -- world y at the top of each screen
-local SNAP    = 0x8000   -- map RAM: two 16320-byte screen snapshots
+local WW, WH  = 150, 136 -- one table = one screen (22 x 20 Infinity units)
+local CX      = 75       -- table centre line
+local SNAP    = 0x8000   -- map RAM: baked background of the current table
 local SCRBYTES = 16320
+
+-- tuned feel (px/frame)
+local KICK_BUMPER = 2.2  -- Infinity bumper 18.75 u/s
+local KICK_SLING  = 1.6
+local KICK_POST   = 1.2
+-- scales Pokemon's flipper lever impulse; global so tests can sweep it
+TUNE = {flip = 0.6}
+local LAUNCH_VY   = -2.9
 
 -- FAIRY NIGHT palette indices (the palette ships in the sprite sheet)
 local C_KEY, C_OUT, C_FLOOR, C_FLOORL = 0, 1, 2, 3
@@ -35,124 +41,390 @@ local C_MOSSD, C_MOSS, C_LEAF, C_LIME = 4, 5, 6, 7
 local C_BARKD, C_BARK, C_RED, C_PINK = 8, 9, 10, 11
 local C_GOLD, C_CYAN, C_LILAC, C_WHITE = 12, 13, 14, 15
 
--- collision attributes (one per pixel in the cmap; also the paint colour)
-local EMPTY, WALL, SLING, BUMPER, TARGET, GATE, POST = 0, 1, 2, 3, 4, 5, 6
-
--- restitution "amp" per attribute: keep (1/4 + amp/8) of the normal speed
-local AMP = {[WALL]=0, [SLING]=0, [BUMPER]=0, [TARGET]=2, [GATE]=0, [POST]=2}
+-- collision map attributes (static geometry only; toys are analytic)
+local EMPTY, WALL, SLING = 0, 1, 2
 
 -- ============================ input ============================
--- Left flipper: Left / Z    Right flipper: Right / X
--- Plunger: hold Down or A, release to launch.   Nudge: Up
-local vpad = nil -- test harness can replace this with a table of booleans
+-- Revenge of the 'Gator controls: any D-PAD direction = left flipper,
+-- A or B (Z / X keys) = right flipper. Nudge: X or Y button (A / S keys).
+local vpad = nil -- the test harness replaces this with a table of booleans
 local function pad(i)
   if vpad then return vpad[i] or false end
   return btn(i)
 end
-local function leftHeld()  return pad(2) or pad(4) end
-local function rightHeld() return pad(3) or pad(5) end
-local function plungeHeld() return pad(1) or pad(6) end
+local function leftHeld()  return pad(0) or pad(1) or pad(2) or pad(3) end
+local function rightHeld() return pad(4) or pad(5) end
+local function nudgeHeld() return pad(6) or pad(7) end
+
+-- ============================ rng ============================
+-- xorshift32: deterministic per (seed, table index), so a table is the
+-- same every time you come back to it
+local function RNG(seed)
+  local s = seed & 0xffffffff
+  if s == 0 then s = 0x9e3779b9 end
+  local r = {}
+  function r.next()
+    s = s ~ ((s << 13) & 0xffffffff)
+    s = s ~ (s >> 17)
+    s = s ~ ((s << 5) & 0xffffffff)
+    return s
+  end
+  function r.int(n) return r.next() % n end           -- 0 .. n-1
+  function r.chance(p) return r.next() % 100 < p end  -- p percent
+  function r.pick(t) return t[r.int(#t) + 1] end
+  function r.shuffle(t)
+    for i = #t, 2, -1 do local j = r.int(i) + 1 t[i], t[j] = t[j], t[i] end
+    return t
+  end
+  return r
+end
 
 -- ============================ collision map ============================
 local cmap = {}
-local OY = 0 -- world->screen y offset while painting
-
-local function prect(x, y, w, h, a) rect(x, y - OY, w, h, a) end
-local function pcirc(x, y, r, a) circ(x, y - OY, r, a) end
-local function ptri(x1, y1, x2, y2, x3, y3, a)
-  tri(x1, y1 - OY, x2, y2 - OY, x3, y3 - OY, a)
-end
-local function ppoly(pts, a) -- convex polygon as a triangle fan
-  local n = #pts // 2
-  for i = 2, n - 1 do
-    ptri(pts[1], pts[2], pts[i*2-1], pts[i*2], pts[i*2+1], pts[i*2+2], a)
-  end
-end
-local function pcap(x1, y1, x2, y2, r, a) -- thick segment with round ends
-  local dx, dy = x2 - x1, y2 - y1
-  local l = math.sqrt(dx*dx + dy*dy)
-  local nx, ny = -dy / l * r, dx / l * r
-  ptri(x1+nx, y1+ny, x2+nx, y2+ny, x2-nx, y2-ny, a)
-  ptri(x1+nx, y1+ny, x2-nx, y2-ny, x1-nx, y1-ny, a)
-  pcirc(x1, y1, r, a) pcirc(x2, y2, r, a)
+local function cset(x, y, a)
+  if x >= 0 and x < WW and y >= 0 and y < WH then cmap[y * WW + x] = a end
 end
 
--- ---------------- table layout (world coords, 176 x 256) ----------------
--- Object lists double as physics data and draw data.
-local bumpers = {
-  {x=62, y=60, r=6, spr=0, flash=0, cool=0},
-  {x=98, y=56, r=6, spr=2, flash=0, cool=0},
-  {x=80, y=82, r=6, spr=4, flash=0, cool=0},
-}
-local targets = { -- toadstool standups (bottom screen)
-  {x=56, y=150, r=5, lit=false},
-  {x=80, y=144, r=5, lit=false},
-  {x=104, y=150, r=5, lit=false},
-}
-local slings = {
-  {ax=34, ay=170, bx=34, by=196, cx=48, cy=206, rot=-11.25, cool=0, flash=0},
-  {ax=126, ay=170, bx=126, by=196, cx=112, cy=206, rot=11.25, cool=0, flash=0},
-}
-local lanes = { -- top rollovers, AABB sensors
-  {x=72, y=30, lit=false, inside=false},
-  {x=88, y=30, lit=false, inside=false},
-  {x=104, y=30, lit=false, inside=false},
-}
-local hole = {x=128, y=100, r=4, inside=false, count=0} -- the fairy ring
-local kickbacks = {
-  {x=10.5, y=234, lit=true, inside=false},
-  {x=149.5, y=234, lit=false, inside=false},
-}
-
-local function paint_table()
-  prect(0, 0, WW, WH, WALL)                 -- everything solid ...
-  pcirc(88, 84, 82, EMPTY)                  -- ... carve the dome
-  prect(6, 84, 148, WH - 84, EMPTY)         -- ... the playfield
-  prect(160, 60, 10, WH - 60, EMPTY)        -- ... the plunger lane
-  prect(160, 251, 10, 5, WALL)              -- lane floor (ball rests here)
-  prect(154, 76, 6, WH - 76, WALL)          -- lane divider
-  pcirc(156.5, 76, 3, WALL)                 -- rounded divider top
-  prect(154, 36, 2, 40, GATE)               -- one-way gate out of the lane
-
-  -- top rollover lane posts (rubber)
-  for _, x in ipairs({64, 80, 96, 112}) do pcap(x, 22, x, 34, 2, POST) end
-  -- mushroom bumpers
-  for _, b in ipairs(bumpers) do pcirc(b.x, b.y, b.r, BUMPER) end
-
-  -- bottom: inlane/outlane rails, aprons that feed the flippers
-  pcap(17.5, 160, 17.5, 256, 2, WALL)
-  pcap(142.5, 160, 142.5, 256, 2, WALL)
-  -- the apron's top edge is flush with the resting flipper's top surface
-  -- (26.5 deg, tangent to the hub), so the ball rolls straight onto it
-  ppoly({20,205.4, 52,221.4, 52,256, 20,256}, WALL)
-  ppoly({140,205.4, 140,256, 108,256, 108,221.4}, WALL)
-  -- slingshots: solid triangle, kicking face on the playfield side
-  for _, s in ipairs(slings) do
-    ptri(s.ax, s.ay, s.bx, s.by, s.cx, s.cy, WALL)
-    pcap(s.ax, s.ay, s.cx, s.cy, 1.5, SLING)
-  end
-  -- toadstool targets
-  for _, t in ipairs(targets) do pcirc(t.x, t.y, t.r, TARGET) end
-end
-
-local function build_cmap()
-  for i = 0, WW * WH - 1 do cmap[i] = WALL end
-  for slice = 0, 1 do
-    OY = slice * 136
-    cls(0)
-    paint_table()
-    local rows = math.min(136, WH - OY)
-    for y = 0, rows - 1 do
-      local base = (y + OY) * WW
-      for x = 0, WW - 1 do cmap[base + x] = pix(x, y) end
+-- scanline fill of any (concave ok) polygon, flat {x1,y1,x2,y2,...}
+local function fill_poly(p, a)
+  local n = #p // 2
+  local y0, y1 = 1e9, -1e9
+  for i = 1, n do y0 = math.min(y0, p[i*2]) y1 = math.max(y1, p[i*2]) end
+  for y = math.max(0, y0 // 1), math.min(WH - 1, y1 // 1) do
+    local yc, xs = y + 0.5, {}
+    for i = 1, n do
+      local ax, ay = p[i*2-1], p[i*2]
+      local j = i % n + 1
+      local bx, by = p[j*2-1], p[j*2]
+      if (ay <= yc and by > yc) or (by <= yc and ay > yc) then
+        xs[#xs + 1] = ax + (yc - ay) * (bx - ax) / (by - ay)
+      end
+    end
+    table.sort(xs)
+    for k = 1, #xs - 1, 2 do
+      for x = math.ceil(xs[k] - 0.5), math.floor(xs[k+1] - 0.5) do cset(x, y, a) end
     end
   end
-  OY = 0
+end
+
+local function fill_capsule(x1, y1, x2, y2, r, a)
+  local dx, dy = x2 - x1, y2 - y1
+  local l2 = dx*dx + dy*dy
+  for y = (math.min(y1, y2) - r) // 1, (math.max(y1, y2) + r) // 1 do
+    for x = (math.min(x1, x2) - r) // 1, (math.max(x1, x2) + r) // 1 do
+      local px, py = x + 0.5, y + 0.5
+      local t = l2 > 0 and math.max(0, math.min(1, ((px-x1)*dx + (py-y1)*dy) / l2)) or 0
+      local qx, qy = x1 + dx*t - px, y1 + dy*t - py
+      if qx*qx + qy*qy <= r*r then cset(x, y, a) end
+    end
+  end
+end
+
+-- mirror helpers: pieces are authored as the RIGHT half in (dx, y)
+-- where dx = distance right of the centre line
+local function side_x(dx, side) return side > 0 and CX + dx or CX - dx end
+local function side_poly(dxy, side)
+  local p = {}
+  for i = 1, #dxy, 2 do p[#p+1] = side_x(dxy[i], side) p[#p+1] = dxy[i+1] end
+  return p
+end
+
+-- ============================ table pieces ============================
+-- Half-wall PIECES: the wall contour of the right half from the top
+-- opening (dx 30, y 0) down to the kit joint (dx 69, y 90). Any piece
+-- connects to any other table because the openings never change.
+-- slots: optional anchors the generator may fill.
+local PIECES = {
+  { name = "HOLLOW",  -- wide chamber with a rounded top shoulder
+    wall = {30,0, 36,6, 58,8, 68,16, 70,26, 70,84, 69,90},
+    flipper = {dx = 62, y = 54} },
+  { name = "HOURGLASS", -- pinched waist: the ball rattles through the middle
+    wall = {30,0, 40,10, 64,24, 65,34, 51,47, 51,55, 66,68, 69,90} },
+  { name = "ROOT",  -- a root spur juts in, an upper flipper rides on it
+    wall = {30,0, 33,8, 62,10, 70,20, 70,42, 52,51, 47,56, 52,60, 70,64, 69,90},
+    flipper = {dx = 56, y = 46} },
+  { name = "ALCOVE", -- a side pocket with a fairy ring hole inside
+    wall = {30,0, 36,8, 60,12, 60,34, 73,38, 73,58, 60,62, 60,84, 69,90},
+    hole = {dx = 66, y = 48} },
+  { name = "FUNNEL", -- slanted shoulders steer high shots to the exit
+    wall = {30,0, 46,14, 70,30, 70,88, 69,90} },
+}
+
+-- The fixed bottom KIT (right half; mirrored for the left):
+-- outer wall + outlane, inlane guide, slingshot, flipper pivot, and the
+-- anchor slots for kickback / side post / centre post.
+local KIT = {
+  wall  = {69,89, 69,106, 41,130, 41,140, 80,140, 80,89},
+  guide = {57,88, 57,100, 32,114},          -- capsule chain, r = 2
+  sling = {43,74, 43,92, 33,97},            -- triangle; face = pt1 -> pt3
+                                            -- (inlane under it stays 14+ px wide)
+  pivot = {dx = 25, y = 118},
+  kick  = {dx = 36, y = 126},               -- outlane kickback sensor
+  post  = {dx = 64, y = 86},                -- outlane side post (blocker)
+}
+local CENTER_POST = {x = CX, y = 131}
+
+-- ============================ toy catalogue ============================
+-- r = collision radius, m = placement clearance margin (Infinity's
+-- ObjectPlacement radius, scaled 6.8 px/unit), notc = keep off the centre
+local TOY = {
+  bumper  = {r = 6, m = 14, notc = true, kicker = true},
+  gold    = {r = 6, m = 14, notc = true, kicker = true}, -- score bumper
+  lantern = {r = 5, m = 16, travel = 14, kicker = true}, -- moving bumper
+  hole    = {r = 4, m = 12, notc = true},   -- fairy ring: hold + eject
+  warp    = {r = 4, m = 12, notc = true},   -- pink ring: warp up a table
+  acorn   = {r = 5, m = 13},                -- bash toy (3 hits)
+  toad    = {r = 4, m = 8},                 -- standup target (groups of 3)
+  bud     = {r = 0, m = 7},                 -- rollover sensor (groups of 3)
+}
+
+-- goal definitions: trigger -> reward (Infinity's event model)
+local TRIGGERS = {  -- weight = Infinity trigger chance %
+  {kind = "BUDS", w = 50}, {kind = "ACORN", w = 62}, {kind = "TOADS", w = 34},
+}
+local REWARDS = {   -- weight = Infinity event chance %
+  {kind = "KICKBACK", w = 50}, {kind = "POSTS", w = 50},
+  {kind = "CENTER", w = 72}, {kind = "UPDRAFT", w = 50},
+  {kind = "MULTI", w = 41}, {kind = "JACKPOT", w = 29},
+}
+local REWARD_LABEL = {KICKBACK = "KICKBACK", POSTS = "SIDE POSTS",
+  CENTER = "CENTER POST", UPDRAFT = "UPDRAFT", MULTI = "MULT +1", JACKPOT = "JACKPOT"}
+
+-- ============================ table generation ============================
+local masterSeed = 1
+local function is_bonus(idx) return idx > 0 and (idx + 1) % 10 == 0 end
+
+-- does a circle of radius rr at (x,y) touch any solid pixel?
+local function cmap_clear(x, y, rr)
+  for py = (y - rr) // 1, (y + rr) // 1 do
+    for px = (x - rr) // 1, (x + rr) // 1 do
+      local dx, dy = px + 0.5 - x, py + 0.5 - y
+      if dx*dx + dy*dy <= rr*rr then
+        if px < 0 or px >= WW or py < 0 or py >= WH then return false end
+        if cmap[py * WW + px] ~= EMPTY then return false end
+      end
+    end
+  end
+  return true
+end
+
+local function paint_table(t)
+  for i = 0, WW * WH - 1 do cmap[i] = EMPTY end
+  -- upper-flipper brackets: a sloped mount from the wall down to the pivot,
+  -- so a ball behind the flipper rolls back onto it instead of wedging
+  for _, b in ipairs(t.brackets or {}) do
+    fill_capsule(side_x(b.dx + 16, b.side), b.y - 7, side_x(b.dx + 3, b.side), b.y + 1, 4, WALL)
+  end
+  for _, side in ipairs({-1, 1}) do
+    local pc = side < 0 and t.left or t.right
+    local w = {30, -2}
+    for i = 1, #pc.wall do w[#w + 1] = pc.wall[i] end
+    for _, v in ipairs({80, 90, 80, -2}) do w[#w + 1] = v end
+    fill_poly(side_poly(w, side), WALL)
+    fill_poly(side_poly(KIT.wall, side), WALL)
+    local g = KIT.guide
+    for i = 1, #g - 2, 2 do
+      fill_capsule(side_x(g[i], side), g[i+1], side_x(g[i+2], side), g[i+3], 2, WALL)
+    end
+    local s = KIT.sling
+    fill_poly(side_poly(s, side), WALL)
+    fill_capsule(side_x(s[1], side), s[2], side_x(s[5], side), s[6], 1.5, SLING)
+  end
+end
+
+-- Infinity's ObjectPlacement: random free grid points, clearance margin
+-- against walls and already-placed toys, up to 100 tries.
+local function new_grid()
+  local g = {}
+  for gy = 0, 11 do
+    for gx = 0, 11 do g[#g + 1] = {x = 20 + gx * 10, y = 13 + gy * 6} end
+  end
+  return g
+end
+
+-- POCKET RULE: any gap between two solids must be either closed or wider
+-- than the ball (8 px) plus slack, otherwise the ball can wedge in it.
+local GAP = 2 * BR + 3
+local function spot_ok(t, x, y, def, extra)
+  if def.notc and math.abs(x - CX) < 10 then return false end
+  if not cmap_clear(x, y, def.r + GAP) then return false end
+  if def.travel then
+    for dx = -def.travel, def.travel, 4 do
+      if not cmap_clear(x + dx, y, def.r + BR + 2) then return false end
+    end
+  end
+  for _, o in ipairs(t.objs) do
+    local od = TOY[o.kind]
+    local need = math.max(def.m, od.m) + (extra or 0)
+    if def.r > 0 and od.r > 0 and not (def.kicker and od.kicker) then
+      need = math.max(need, def.r + od.r + GAP)
+    end
+    if (o.x - x)^2 + (o.y - y)^2 < need * need then return false end
+  end
+  return true
+end
+
+local function claim(t, x, y, m)
+  for i = #t.grid, 1, -1 do
+    local p = t.grid[i]
+    if (p.x - x)^2 + (p.y - y)^2 < m * m then table.remove(t.grid, i) end
+  end
+end
+
+local function add_obj(t, kind, x, y, extra)
+  local o = {kind = kind, x = x, y = y, x0 = x, r = TOY[kind].r,
+             lit = false, hits = 0, cool = 0, flash = 0, alive = true, phase = 0}
+  for k, v in pairs(extra or {}) do o[k] = v end
+  t.objs[#t.objs + 1] = o
+  claim(t, x, y, TOY[kind].m)
+  return o
+end
+
+-- place one toy (or a row of `count` toys spaced `gap` apart)
+local function place(t, rng, kind, count, gap, centred)
+  -- (a row is checked member by member before any member is added)
+  count, gap = count or 1, gap or 0
+  local def = TOY[kind]
+  for _ = 1, 100 do
+    if #t.grid == 0 then return nil end
+    local p = t.grid[rng.int(#t.grid) + 1]
+    local x, y = centred and CX or p.x, p.y
+    local x0 = x - (count - 1) * gap / 2
+    local ok = true
+    for k = 0, count - 1 do
+      local mx = x0 + k * gap
+      local saveNotc = def.notc
+      if count > 1 then def.notc = false end
+      ok = ok and spot_ok(t, mx, y, def, 0)
+      def.notc = saveNotc
+      if not ok then break end
+    end
+    if ok then
+      local group = {}
+      for k = 0, count - 1 do group[#group + 1] = add_obj(t, kind, x0 + k * gap, y) end
+      return group
+    end
+  end
+  return nil
+end
+
+local function weighted(rng, list, allow)
+  local total = 0
+  for _, e in ipairs(list) do if allow(e) then total = total + e.w end end
+  if total == 0 then return nil end
+  local r = rng.int(total)
+  for _, e in ipairs(list) do
+    if allow(e) then
+      if r < e.w then return e end
+      r = r - e.w
+    end
+  end
+end
+
+local function generate(idx)
+  local rng = RNG(masterSeed * 7919 + idx * 104729 + 1)
+  local t = {idx = idx, objs = {}, flippers = {}, events = {}, grid = new_grid(),
+             kick = {false, false}, posts = 0, center = 0, updraft = 0,
+             bonus = is_bonus(idx), visited = false, cleared = false}
+  local gentle = idx < 4
+
+  -- 1. shell: one piece per side, picked independently (mirrored left)
+  if t.bonus then
+    t.left, t.right = PIECES[1], PIECES[1]
+  else
+    local pool = gentle and {PIECES[1], PIECES[2], PIECES[5]} or PIECES
+    t.left, t.right = rng.pick(pool), rng.pick(pool)
+  end
+  paint_table(t)
+
+  -- 2. fixed kit: main flippers always
+  t.flippers[1] = {px = CX - KIT.pivot.dx, py = KIT.pivot.y, dir = 1, s = 0, ds = 0, prev = 0}
+  t.flippers[2] = {px = CX + KIT.pivot.dx, py = KIT.pivot.y, dir = -1, s = 0, ds = 0, prev = 0}
+  t.kick[1] = idx == 0 or t.bonus or rng.chance(40)
+  t.kick[2] = idx == 0 or t.bonus or rng.chance(40)
+  -- keep the kit zone out of the scatter grid
+  for i = #t.grid, 1, -1 do if t.grid[i].y > 76 then table.remove(t.grid, i) end end
+
+  -- 3. piece slots: upper flipper (45%), alcove hole
+  for si, side in ipairs({-1, 1}) do
+    local pc = side < 0 and t.left or t.right
+    if pc.flipper and not gentle and rng.chance(45) then
+      local f = pc.flipper
+      t.flippers[#t.flippers + 1] = {px = side_x(f.dx, side), py = f.y, dir = -side,
+        s = 0, ds = 0, prev = 0, extra = true}
+      t.brackets = t.brackets or {}
+      t.brackets[#t.brackets + 1] = {side = side, dx = f.dx, y = f.y}
+      claim(t, side_x(f.dx, side), f.y, 22)
+    end
+    if pc.hole and rng.chance(80) then
+      add_obj(t, "hole", side_x(pc.hole.dx, side), pc.hole.y)
+    end
+  end
+
+  if t.brackets then paint_table(t) end -- brackets are walls too
+
+  if t.bonus then
+    -- the fairy court: a ring of bumpers around a jackpot ring
+    add_obj(t, "warp", CX, 44, {court = true})
+    for k = 0, 4 do
+      local a = k / 5 * 2 * math.pi - math.pi / 2
+      add_obj(t, k % 2 == 0 and "gold" or "bumper", CX + math.cos(a) * 30, 44 + math.sin(a) * 22)
+    end
+    t.center = 99999 -- centre post up for the whole visit
+    return t
+  end
+
+  -- 4. goals: 1 on gentle tables, else 1-3 (Infinity: Next(3)+1)
+  local nGoals = gentle and 1 or 1 + rng.int(3)
+  local usedReward, usedTrigger, centreTaken = {}, {}, false
+  for _ = 1, nGoals do
+    local rw = weighted(rng, REWARDS, function(e)
+      if usedReward[e.kind] then return false end
+      if e.kind == "UPDRAFT" and (gentle or centreTaken) then return false end
+      return true
+    end)
+    local tr = weighted(rng, TRIGGERS, function(e)
+      return not usedTrigger[e.kind] and not (gentle and e.kind == "ACORN" and idx == 0)
+    end)
+    if rw and tr then
+      local members
+      if tr.kind == "BUDS" then members = place(t, rng, "bud", 3, 13)
+      elseif tr.kind == "TOADS" then members = place(t, rng, "toad", 3, 19)
+      else members = place(t, rng, "acorn") end
+      if members then
+        usedReward[rw.kind], usedTrigger[tr.kind] = true, true
+        if rw.kind == "UPDRAFT" then
+          centreTaken = true
+          claim(t, CX, 40, 18) -- keep the wind column clear
+        end
+        t.events[#t.events + 1] = {trigger = tr.kind, reward = rw.kind,
+          members = members, times = 0}
+      end
+    end
+  end
+
+  -- 5. free toys: shuffled creators, each rolls its chance, up to a cap
+  local cap = gentle and 3 or 4 + rng.int(4)
+  local creators = {{"bumper", 85}, {"lantern", 65}, {"lantern", 65},
+                    {"gold", 35}, {"hole", 15}}
+  if not gentle then creators[#creators + 1] = {"warp", 8} end
+  local placed = 0
+  for _ = 1, 20 do
+    if placed >= cap then break end
+    rng.shuffle(creators)
+    for _, c in ipairs(creators) do
+      if placed >= cap then break end
+      if rng.chance(c[2]) then
+        if place(t, rng, c[1]) then placed = placed + 1 end
+      end
+    end
+  end
+  return t
 end
 
 -- ============================ ball + ring probe ============================
-local ball = {x=164.5, y=246.5, vx=0, vy=0, grav=false,
-              px=164.5, py=246.5, spin=0, rot=0}
+local ball = {x = CX, y = 128, vx = 0, vy = 0, px = CX, py = 128,
+              spin = 0, rot = 0, noflip = true}
 
 -- 16 probe points, clockwise from "right" (Pokemon Pinball's exact offsets)
 local RING = {
@@ -165,8 +437,7 @@ for i, p in ipairs(RING) do
   if a < 0 then a = a + 2*math.pi end
   RANG[i-1] = a
 end
-
--- normal + push-out for every (first, last) touching point = the
+-- normal + push-out for every (first, last) touching point: the
 -- collision_deltas tables, regenerated from their formula
 local RUN = {}
 for s = 0, 15 do
@@ -180,15 +451,12 @@ end
 
 local function attr_at(x, y)
   local ix, iy = x // 1, y // 1
-  if ix < 0 or ix >= WW or iy < 0 then return WALL end
-  if iy >= WH then return EMPTY end -- open below: the drain
-  local a = cmap[iy * WW + ix]
-  if a == GATE and ball.vx <= 0 then return EMPTY end -- one-way
-  return a
+  if ix < 0 or ix >= WW then return WALL end
+  if iy < 0 or iy >= WH then return EMPTY end -- open top and bottom
+  return cmap[iy * WW + ix]
 end
 
 local hits = {}
--- returns hit, nx, ny, push, attr (attr of the first touching point)
 local function ring_test(bx, by)
   local any, all = false, true
   for i = 0, 15 do
@@ -212,14 +480,8 @@ local function ring_test(bx, by)
 end
 
 -- ============================ flippers ============================
--- 16 states; state changes 3.2/frame (0x333) so a full stroke is ~5 frames.
--- Angle: 26.5 deg below horizontal (state 0) to ~31 deg above (state 15).
-local FL_PIVOT_Y = 228
-local FL_LEN, FL_RH, FL_RT = 19, 5, 3  -- length, hub radius, tip radius (= sprite)
-local flippers = {
-  {px=54, dir=1,  s=0, ds=0, prev=0, held=false},
-  {px=106, dir=-1, s=0, ds=0, prev=0, held=false},
-}
+-- 16 states, 3.2 states/frame (0x333), 26.5 deg down -> ~31 deg up
+local FL_LEN, FL_RH, FL_RT = 19, 5, 3 -- = the sprite shape
 local FCOS, FSIN = {}, {}
 for s = 0, 15 do
   local th = math.rad(26.5 - 3.83 * s)
@@ -232,41 +494,30 @@ local function flipper_update(f, held)
   if (f.prev == 0 and ch < 0) or (f.prev == 15 and ch > 0) then ch = 0 end
   f.s = math.max(0, math.min(15, f.s + ch))
   f.ds = ch
-  if held and not f.held then sfx(0, 40, 6, 0, 8) end
-  f.held = held
 end
 
--- Test the ball against one flipper state, in left-flipper space
--- (dx = distance right of pivot, mirrored for the right flipper).
--- Returns nx, ny (left space), push, radius-from-pivot  or nil.
 local function flipper_state_hit(dx, dy, s)
   local ux, uy = FCOS[s], FSIN[s]
-  local nux, nuy = uy, -ux                 -- "up" side normal
+  local nux, nuy = uy, -ux
   local t = dx*ux + dy*uy
   local d = math.sqrt(dx*dx + dy*dy)
-  if t < 0 then                            -- behind the pivot: round hub
-    if d < FL_RH + BR and d > 0.01 then
-      return dx/d, dy/d, FL_RH + BR - d, d
-    end
-  elseif t > FL_LEN then                   -- beyond the tip: round tip
+  if t < 0 then
+    if d < FL_RH + BR and d > 0.01 then return dx/d, dy/d, FL_RH + BR - d, d end
+  elseif t > FL_LEN then
     local tx, ty = dx - ux*FL_LEN, dy - uy*FL_LEN
     local dt = math.sqrt(tx*tx + ty*ty)
-    if dt < FL_RT + BR and dt > 0.01 then
-      return tx/dt, ty/dt, FL_RT + BR - dt, d
-    end
-  else                                     -- body: push out of the top
+    if dt < FL_RT + BR and dt > 0.01 then return tx/dt, ty/dt, FL_RT + BR - dt, d end
+  else
     local lim = FL_RH + (FL_RT - FL_RH) * t / FL_LEN + BR
     local h = dx*nux + dy*nuy
-    if h < lim and h > -(lim + 6) then
-      return nux, nuy, lim - h, d
-    end
+    if h < lim and h > -(lim + 6) then return nux, nuy, lim - h, d end
   end
 end
 
 -- swept test from last frame's state to this frame's; first hit wins
 local function flipper_collide(f)
   local dx = (ball.x - f.px) * f.dir
-  local dy = ball.y - FL_PIVOT_Y
+  local dy = ball.y - f.py
   if dx < -12 or dx > 30 or dy < -24 or dy > 18 then return false end
   local s, e = f.prev, f.s // 1
   local step = e >= s and 1 or -1
@@ -274,7 +525,7 @@ local function flipper_collide(f)
     local nx, ny, push, r = flipper_state_hit(dx, dy, st)
     if nx then
       local force = 0
-      if f.ds > 0 then force = math.min(15.5 * r, 252) / 256 * f.ds * 4 end
+      if f.ds > 0 then force = math.min(15.5 * r, 252) / 256 * f.ds * 4 * TUNE.flip end
       return true, nx * f.dir, ny, push, force
     end
   end
@@ -282,62 +533,148 @@ local function flipper_collide(f)
 end
 
 -- ============================ game state ============================
-local state = "title" -- title | plunge | play | hold | drain | over
-local view = 2
+local state = "title" -- title | ready | play | hold | lost | over
+local tables = {}      -- generated tables by index (state persists)
+local cur              -- current table
+local floorIdx = 0     -- checkpoint: falling below this loses the ball
+local best = 0
 local score, balls, mult = 0, 3, 1
-local charge, plungeWas = 0, false
 local saver = 0
-local holdT, holdKind = 0, nil
-local drainT = 0
+local holdT, holdObj = 0, nil
+local lostT = 0
 local msg, msgT = "", 0
 local shake, nudgeCool = 0, 0
 local frame = 0
-local lastNx, lastNy, touching = 0, 0, false
-
--- sparkle particles (sprite tiles 4-7) and the fairy mascot
-local parts = {}
-local function sparkle(x, y, n)
-  for _ = 1, n or 4 do
-    parts[#parts + 1] = {x = x, y = y, vx = (math.random() - 0.5) * 2,
-      vy = (math.random() - 0.5) * 2 - 0.5, t = 16 + math.random(0, 8)}
-  end
-end
-local fairy = {x = 120, y = 90, tx = 120, ty = 90}
+local touching, lastNx, lastNy = false, 0, 0
+local lflip, rflip = false, false
 
 local function say(m, t) msg, msgT = m, t or 120 end
 local function add(p) score = score + p * mult end
 
-local function serve()
-  ball.x, ball.y, ball.vx, ball.vy = 164.5, 246.5, 0, 0
-  ball.grav, ball.spin = false, 0
-  charge, plungeWas = 0, false
-  state, view = "plunge", 2
+local parts = {}
+local function sparkle(x, y, n)
+  for _ = 1, n or 4 do
+    if #parts >= 60 then return end
+    parts[#parts + 1] = {x = x, y = y, vx = (math.random() - 0.5) * 2,
+      vy = (math.random() - 0.5) * 2 - 0.5, t = 16 + math.random(0, 8)}
+  end
+end
+local fairy = {x = 120, y = 60, tx = 120, ty = 60}
+
+local bake -- forward
+
+local function get_table(idx)
+  if not tables[idx] then tables[idx] = generate(idx) end
+  return tables[idx]
 end
 
-local function new_game()
-  score, balls, mult = 0, 3, 1
-  for _, t in ipairs(targets) do t.lit = false end
-  for _, l in ipairs(lanes) do l.lit = false end
-  kickbacks[1].lit, kickbacks[2].lit = true, false
-  hole.count = 0
-  saver = 0
+local function enter_table(idx)
+  cur = get_table(idx)
+  paint_table(cur)
+  cur.visited = true
+  for i = #parts, 1, -1 do parts[i] = nil end
+  best = math.max(best, idx)
+  if cur.bonus then floorIdx = math.max(floorIdx, idx) end
+  for _, f in ipairs(cur.flippers) do f.s, f.prev, f.ds = 0, 0, 0 end
+  bake()
+end
+
+local function serve()
+  ball.x, ball.y, ball.vx, ball.vy = CX, 129, 0, 0
+  ball.noflip, ball.spin = true, 0
+  state = "ready"
+end
+
+local function new_game(seed)
+  masterSeed = seed or (time() // 1) % 100000 + 1
+  tables, floorIdx, best = {}, 0, 0
+  score, balls, mult, saver = 0, 3, 1, 0
+  enter_table(0)
   serve()
 end
 
-local function capture(x, y, frames, kind)
-  ball.x, ball.y, ball.vx, ball.vy = x, y, 0, 0
-  ball.grav = false
-  holdT, holdKind, state = frames, kind, "hold"
+-- ============================ goals ============================
+local function trigger_done(ev)
+  if ev.trigger == "ACORN" then return not ev.members[1].alive end
+  for _, o in ipairs(ev.members) do if not o.lit then return false end end
+  return true
+end
+
+local function grant(ev)
+  ev.times = ev.times + 1
+  local rw = ev.reward
+  if rw == "KICKBACK" then cur.kick[1], cur.kick[2] = true, true
+  elseif rw == "POSTS" then cur.posts = 30 * 60
+  elseif rw == "CENTER" then cur.center = 30 * 60
+  elseif rw == "UPDRAFT" then cur.updraft = 15 * 60
+  elseif rw == "MULTI" then mult = math.min(9, mult + 1)
+  elseif rw == "JACKPOT" then add(5000 * (cur.idx + 1)) end
+  add(2500)
+  say(REWARD_LABEL[rw] .. "!")
+  sparkle(ball.x, ball.y, 8)
+  -- re-arm the trigger so the goal can be earned again
+  if ev.trigger == "ACORN" then
+    local a = ev.members[1]
+    a.alive, a.hits, a.respawn = false, 0, 10 * 60
+  else
+    for _, o in ipairs(ev.members) do o.lit = false end
+  end
+  local all = true
+  for _, e in ipairs(cur.events) do if e.times == 0 then all = false end end
+  if all and not cur.cleared then
+    cur.cleared = true
+    add(10000)
+    say("TABLE CLEAR!", 150)
+  end
+end
+
+local function check_goals()
+  for _, ev in ipairs(cur.events) do
+    if trigger_done(ev) then grant(ev) end
+  end
 end
 
 -- ============================ objects ============================
-local function nearest(list)
-  local best, bd = nil, 1e9
-  for _, o in ipairs(list) do
-    local d = (o.x - ball.x)^2 + (o.y - ball.y)^2
-    if d < bd then best, bd = o, d end
+local function capture(o, frames)
+  ball.x, ball.y, ball.vx, ball.vy = o.x, o.y, 0, 0
+  holdT, holdObj, state = frames, o, "hold"
+end
+
+local function post_list()
+  local l = {}
+  if cur.center > 0 then l[#l + 1] = {x = CENTER_POST.x, y = CENTER_POST.y, r = 4} end
+  if cur.posts > 0 then
+    for _, side in ipairs({-1, 1}) do
+      l[#l + 1] = {x = side_x(KIT.post.dx, side), y = KIT.post.y, r = 4}
+    end
   end
-  return best
+  return l
+end
+
+-- analytic circle toys: returns the hit object and its normal
+local function toy_collide()
+  for _, o in ipairs(cur.objs) do
+    local def = TOY[o.kind]
+    if o.alive and def.r > 0 and o.kind ~= "hole" and o.kind ~= "warp" and o.kind ~= "bud" then
+      local dx, dy = ball.x - o.x, ball.y - o.y
+      local d = math.sqrt(dx*dx + dy*dy)
+      local rr = o.r + BR
+      if d < rr and d > 0.01 then
+        local nx, ny = dx / d, dy / d
+        ball.x, ball.y = o.x + nx * (rr + 0.5), o.y + ny * (rr + 0.5)
+        return o, nx, ny
+      end
+    end
+  end
+  for _, p in ipairs(post_list()) do
+    local dx, dy = ball.x - p.x, ball.y - p.y
+    local d = math.sqrt(dx*dx + dy*dy)
+    if d < p.r + BR and d > 0.01 then
+      local nx, ny = dx / d, dy / d
+      ball.x, ball.y = p.x + nx * (p.r + BR + 0.5), p.y + ny * (p.r + BR + 0.5)
+      return {kind = "post"}, nx, ny
+    end
+  end
 end
 
 local function rotate(nx, ny, deg)
@@ -346,100 +683,72 @@ local function rotate(nx, ny, deg)
   return nx*c - ny*s, nx*s + ny*c
 end
 
--- Sensors: no physics, edge-triggered (fire once on entry)
+-- sensors: rollovers, rings, kickbacks, updraft
 local function sensors()
-  for i, l in ipairs(lanes) do
-    local inside = math.abs(ball.x - l.x) < 5 and math.abs(ball.y - l.y) < 4
-    if inside and not l.inside then
-      add(250)
-      if not l.lit then l.lit = true sparkle(l.x, l.y - 6, 4) end
-      if lanes[1].lit and lanes[2].lit and lanes[3].lit then
-        for _, m in ipairs(lanes) do m.lit = false end
-        mult = math.min(5, mult + 1)
-        add(2500)
-        say("MULTIPLIER x" .. mult)
+  for _, o in ipairs(cur.objs) do
+    if o.kind == "bud" then
+      local inside = math.abs(ball.x - o.x) < 5 and math.abs(ball.y - o.y) < 5
+      if inside and not o.inside then
+        add(100)
+        if not o.lit then o.lit = true sparkle(o.x, o.y, 3) end
       end
+      o.inside = inside
+    elseif (o.kind == "hole" or o.kind == "warp") then
+      local d = math.sqrt((ball.x - o.x)^2 + (ball.y - o.y)^2)
+      if d < o.r and not o.inside then
+        o.inside = true
+        add(o.court and 25000 or 2500)
+        say(o.kind == "warp" and (o.court and "FAIRY COURT!" or "WARP UP!") or "FAIRY RING")
+        sparkle(o.x, o.y, 10)
+        capture(o, o.kind == "warp" and 50 or 60)
+        return
+      end
+      if d > o.r + 5 then o.inside = false end
     end
-    l.inside = inside
   end
-  local d = math.sqrt((ball.x - hole.x)^2 + (ball.y - hole.y)^2)
-  if d < hole.r and not hole.inside then
-    hole.inside = true -- re-armed once the ejected ball is clear
-    hole.count = hole.count + 1
-    add(5000 * hole.count)
-    say(hole.count % 3 == 0 and "FAIRY RING!!" or "FAIRY RING " .. hole.count)
-    if hole.count % 3 == 0 then add(50000) kickbacks[1].lit, kickbacks[2].lit = true, true end
-    sparkle(hole.x, hole.y, 10)
-    capture(hole.x, hole.y, 70, "hole")
-  end
-  if d > hole.r + 4 then hole.inside = false end
-  for _, k in ipairs(kickbacks) do
-    local inside = math.abs(ball.x - k.x) < 5 and math.abs(ball.y - k.y) < 5
-    if inside and not k.inside and k.lit and ball.vy > 0 then
-      k.lit = false
-      add(1000)
-      say("KICKBACK!")
-      capture(k.x, k.y, 20, "kick")
-    end
-    k.inside = inside
-  end
-end
-
--- Physical objects: react to the attribute the ring touched.
--- Returns the kick force and restitution amp for the bounce.
-local function object_hit(attr, nx, ny)
-  if attr == BUMPER then
-    local b = nearest(bumpers)
-    if b.cool <= 0 then
-      b.cool, b.flash = 6, 8
-      add(100)
-      sparkle(ball.x - nx * BR, ball.y - ny * BR, 3)
-      sfx(1, 36, 6, 2, 12)
-      return 2.0, 0, nx, ny -- fixed kick along the normal
-    end
-  elseif attr == SLING then
-    local s = ball.x < 80 and slings[1] or slings[2]
-    if s.cool <= 0 then
-      s.cool, s.flash = 8, 6
-      add(10)
-      sfx(1, 30, 6, 2, 10)
-      local rx, ry = rotate(nx, ny, s.rot) -- tilt the kick 11.25 deg up
-      return 2.0, 0, rx, ry
-    end
-  elseif attr == TARGET then
-    local t = nearest(targets)
-    if not t.lit then
-      t.lit = true
+  for i, side in ipairs({-1, 1}) do
+    local kx, ky = side_x(KIT.kick.dx, side), KIT.kick.y
+    if cur.kick[i] and math.abs(ball.x - kx) < 5 and math.abs(ball.y - ky) < 6 and ball.vy > 0 then
+      cur.kick[i] = false
       add(500)
-      sparkle(t.x, t.y - 4, 5)
-      sfx(1, 52, 8, 1, 10)
-      if targets[1].lit and targets[2].lit and targets[3].lit then
-        for _, u in ipairs(targets) do u.lit = false end
-        kickbacks[1].lit, kickbacks[2].lit = true, true
-        add(5000)
-        say("KICKBACKS LIT")
-      end
+      say("KICKBACK!")
+      ball.x, ball.y = kx, ky
+      ball.vx, ball.vy = 2.6 * side, -2.4  -- back up the outlane
+      shake = 4
     end
   end
-  return 0, AMP[attr] or 0, nx, ny
+  if cur.updraft > 0 and math.abs(ball.x - CX) < 8 and ball.y > 8 and ball.y < 84 then
+    ball.vy = math.max(-4.6, ball.vy - 0.35)
+  end
 end
 
 -- ============================ physics frame ============================
--- Order follows Pokemon Pinball's HandleBallPhysics.
 local function physics()
-  local lh, rh = leftHeld(), rightHeld()
-  flipper_update(flippers[1], lh)
-  flipper_update(flippers[2], rh)
-  if state == "hold" then return end
+  lflip, rflip = leftHeld(), rightHeld()
+  for _, f in ipairs(cur.flippers) do flipper_update(f, f.dir == 1 and lflip or rflip) end
+  for _, o in ipairs(cur.objs) do
+    o.cool, o.flash = o.cool - 1, o.flash - 1
+    if o.kind == "lantern" then
+      o.phase = o.phase + 1
+      o.x = o.x0 + math.sin(o.phase / 60) * TOY.lantern.travel
+    end
+    if o.respawn then
+      o.respawn = o.respawn - 1
+      if o.respawn <= 0 then o.respawn, o.alive = nil, true end
+    end
+  end
+  if state ~= "play" then return end
 
-  -- 1. gravity, velocity clamp
-  if ball.grav then ball.vy = ball.vy + GRAV end
+  -- 1. gravity, clamp
+  ball.vy = ball.vy + GRAV
   ball.vx = math.max(-VMAX, math.min(VMAX, ball.vx))
   ball.vy = math.max(-VMAX, math.min(VMAX, ball.vy))
+  if ball.noflip and ball.vy > 0 then ball.noflip = false end
 
-  -- 2. stage collision (ring), push out
+  -- 2. walls (ring probe)
   local hit, nx, ny, push, attr, buried = ring_test(ball.x, ball.y)
-  if buried then -- fully inside a wall: step back to last good spot
+  local kind = attr
+  if buried then
     ball.x, ball.y = ball.px, ball.py
     ball.vx, ball.vy = -ball.vx * 0.5, -ball.vy * 0.5
     hit = false
@@ -447,130 +756,210 @@ local function physics()
     ball.x, ball.y = ball.x + nx*push, ball.y + ny*push
   end
 
-  -- 3. flippers override the stage normal
-  local kick, amp = 0, 0
-  for _, f in ipairs(flippers) do
-    local fh, fnx, fny, fpush, force = flipper_collide(f)
-    if fh then
-      hit, nx, ny, attr = true, fnx, fny, WALL
-      ball.x, ball.y = ball.x + fnx*fpush, ball.y + fny*fpush
-      kick, amp = force, 1
-      break
+  -- 3. toys, then flippers (flippers win)
+  local o, onx, ony = toy_collide()
+  if o then hit, nx, ny, kind = true, onx, ony, o end
+  local kick, amp, reset = 0, 0, false
+  if not ball.noflip then
+    for _, f in ipairs(cur.flippers) do
+      local fh, fnx, fny, fpush, force = flipper_collide(f)
+      if fh then
+        hit, nx, ny, kind = true, fnx, fny, "flipper"
+        ball.x, ball.y = ball.x + fnx*fpush, ball.y + fny*fpush
+        kick, amp = force, 1
+        break
+      end
     end
   end
 
-  -- 4. objects
-  if hit and attr ~= WALL then kick, amp, nx, ny = object_hit(attr, nx, ny) end
+  -- 4. what did we hit?
+  if hit then
+    if kind == SLING then
+      local side = ball.x < CX and -1 or 1
+      if (cur.slingCool or 0) <= 0 then
+        cur.slingCool = 8
+        nx, ny = rotate(nx, ny, side < 0 and -11.25 or 11.25)
+        kick, reset = KICK_SLING, true
+        add(10)
+      end
+    elseif type(kind) == "table" then
+      local k = kind.kind
+      if k == "bumper" or k == "gold" or k == "lantern" then
+        if kind.cool <= 0 then
+          kind.cool, kind.flash = 6, 8
+          kick, reset = KICK_BUMPER, true
+          add(k == "gold" and 500 or 100)
+          sparkle(ball.x - nx * BR, ball.y - ny * BR, 2)
+        end
+      elseif k == "toad" then
+        amp = 2
+        if not kind.lit then kind.lit = true add(250) sparkle(kind.x, kind.y, 4) end
+      elseif k == "acorn" then
+        amp, kick = 2, 0.8
+        if kind.cool <= 0 then
+          kind.cool, kind.flash = 12, 6
+          kind.hits = kind.hits + 1
+          add(150)
+          if kind.hits >= 3 then kind.alive = false add(1000) sparkle(kind.x, kind.y, 8) end
+        end
+      elseif k == "post" then
+        amp, kick = 2, KICK_POST
+      end
+    end
+  end
   touching, lastNx, lastNy = hit, nx, ny
 
-  -- 5. bounce in the normal's frame
+  -- 5. response: Infinity-style reset kick, or Pokemon rotate-bounce
   if hit then
-    local tx, ty = -ny, nx
-    local vn = ball.vx*nx + ball.vy*ny
-    local vt = ball.vx*tx + ball.vy*ty
-    if vn < 0 then vn = -vn * (0.25 + 0.125*amp) end
-    vn = vn + kick
-    ball.vx, ball.vy = vt*tx + vn*nx, vt*ty + vn*ny
-    ball.spin = math.max(-127, math.min(127, (vt * 4) // 1))
+    if reset then
+      ball.vx, ball.vy = nx * kick, ny * kick
+    else
+      local tx, ty = -ny, nx
+      local vn = ball.vx*nx + ball.vy*ny
+      local vt = ball.vx*tx + ball.vy*ty
+      if vn < 0 then vn = -vn * (0.25 + 0.125*amp) end
+      vn = vn + kick
+      ball.vx, ball.vy = vt*tx + vn*nx, vt*ty + vn*ny
+      ball.spin = math.max(-127, math.min(127, (vt * 4) // 1))
+    end
   end
+  if cur.slingCool then cur.slingCool = cur.slingCool - 1 end
 
-  -- 6. move (clamped step: the ring can never skip a 5px+ wall)
+  -- 6. move
   ball.px, ball.py = ball.x, ball.y
   ball.x = ball.x + math.max(-STEPMAX, math.min(STEPMAX, ball.vx))
   ball.y = ball.y + math.max(-STEPMAX, math.min(STEPMAX, ball.vy))
   ball.rot = (ball.rot + ball.spin) % 256
 
   sensors()
+  check_goals()
+end
+
+-- ============================ table transitions ============================
+local function transitions()
+  if state ~= "play" then return end
+  if ball.y < -6 then -- out of the top: climb
+    local nxt = cur.idx + 1
+    local fresh = not (tables[nxt] and tables[nxt].visited)
+    if fresh then add(1000 * nxt) end
+    enter_table(nxt)
+    ball.y = ball.y + WH
+    ball.noflip = true
+    say(cur.bonus and "FAIRY COURT" or ("TABLE " .. nxt))
+  elseif ball.y > WH + 6 then -- out of the bottom
+    if cur.idx <= floorIdx then
+      if saver > 0 then
+        say("BALL SAVED")
+        saver = 0
+        serve()
+      else
+        state, lostT = "lost", 60
+      end
+    else
+      enter_table(cur.idx - 1)
+      ball.y = ball.y - WH
+      ball.vx, ball.vy = ball.vx * 0.5, ball.vy * 0.1 -- Infinity's softened drop
+      cur.center = math.max(cur.center, 5 * 60)       -- mercy post
+      say("DOWN TO " .. cur.idx)
+    end
+  end
 end
 
 -- ============================ game flow ============================
 local function update()
   frame = frame + 1
+  for i = #parts, 1, -1 do -- particles age here, not in draw
+    local p = parts[i]
+    p.x, p.y, p.t = p.x + p.vx, p.y + p.vy, p.t - 1
+    if p.t <= 0 then table.remove(parts, i) end
+  end
   if msgT > 0 then msgT = msgT - 1 end
   if shake > 0 then shake = shake - 1 end
   if nudgeCool > 0 then nudgeCool = nudgeCool - 1 end
-  for _, b in ipairs(bumpers) do b.cool, b.flash = b.cool - 1, b.flash - 1 end
-  for _, s in ipairs(slings) do s.cool, s.flash = s.cool - 1, s.flash - 1 end
 
   if state == "title" or state == "over" then
-    if (btnp(4) or btnp(5)) and not vpad then new_game() end
+    if not vpad then
+      for i = 0, 5 do if btnp(i) then new_game() break end end
+    end
     return
   end
+  if cur.posts > 0 then cur.posts = cur.posts - 1 end
+  if cur.center > 0 and not cur.bonus then cur.center = cur.center - 1 end
+  if cur.updraft > 0 then cur.updraft = cur.updraft - 1 end
+  if saver > 0 and state == "play" then saver = saver - 1 end
 
-  if state == "plunge" then
-    local held = plungeHeld()
-    if held then charge = math.min(1, charge + 1/40) end
-    if plungeWas and not held then
-      ball.vy = -(3.6 + 1.9 * charge) -- full charge = -5.5, Pokemon's launch
-      ball.grav = true
+  if state == "ready" then
+    if leftHeld() or rightHeld() then
       state = "play"
-      sfx(1, 24, 10, 2, 12)
+      ball.vy = LAUNCH_VY
+      ball.vx = (frame % 7 - 3) * 0.1
+      if saver == 0 then saver = 10 * 60 end
     end
-    plungeWas = held
   elseif state == "hold" then
     holdT = holdT - 1
     if holdT <= 0 then
-      ball.grav, state = true, "play"
-      if holdKind == "hole" then ball.vx, ball.vy = -1.2, 1.8
-      else ball.vx, ball.vy = 0, -4.0 end -- kickback
+      state = "play"
+      local o = holdObj
+      if o.kind == "warp" then
+        local nxt = cur.idx + 1
+        enter_table(nxt)
+        ball.x, ball.y = CX, WH - 4
+        ball.vx, ball.vy = 0, LAUNCH_VY
+        ball.noflip = true
+        say(cur.bonus and "FAIRY COURT" or ("TABLE " .. nxt))
+      else
+        local side = o.x < CX and 1 or -1
+        ball.vx, ball.vy = 0.9 * side, 1.4 -- eject down toward the flippers
+      end
     end
   elseif state == "play" then
-    -- nudge: only does anything while touching (projected on the normal)
-    if pad(0) and nudgeCool == 0 then
+    if nudgeHeld() and nudgeCool == 0 then
       nudgeCool, shake = 30, 6
       if touching then
-        local f = 0*lastNx + -2*lastNy
+        local f = -2 * lastNy
         if f > 0 then ball.vx, ball.vy = ball.vx + f*lastNx, ball.vy + f*lastNy end
       end
     end
-    if saver > 0 and ball.x < 154 then saver = saver - 1 end
-    -- weak launch fell back into the lane
-    if ball.x > 160 and ball.y > 240 and math.abs(ball.vy) < 0.3 then serve() end
-    if ball.y > WH + 6 then
-      if saver > 0 then
-        say("BALL SAVED")
-        saver = -1
-        serve()
-      else
-        state, drainT = "drain", 60
-        sfx(1, 12, 30, 2, 12)
+    -- trap safety net (Infinity respawns a stuck ball after 5 s): if the
+    -- ball stays inside a 16 px box for 4 s with no flipper held (so a
+    -- cradle is fine), pop it out toward the centre
+    local tb = ball.trap
+    if not tb or lflip or rflip or math.abs(ball.x - tb.x) > 8 or math.abs(ball.y - tb.y) > 8 then
+      ball.trap = {x = ball.x, y = ball.y, t = 0}
+    else
+      tb.t = tb.t + 1
+      if tb.t > 240 then
+        ball.trap = nil
+        ball.vx, ball.vy = (CX - ball.x) * 0.04, -2.2
+        ball.traps = (ball.traps or 0) + 1
+        say("UNSTUCK")
       end
     end
-  elseif state == "drain" then
-    drainT = drainT - 1
-    if drainT <= 0 then
+  elseif state == "lost" then
+    lostT = lostT - 1
+    if lostT <= 0 then
       balls = balls - 1
       mult = 1
-      if balls > 0 then serve() saver = 0 else state = "over" end
+      if balls > 0 then
+        if cur.idx ~= floorIdx then enter_table(floorIdx) end
+        serve()
+      else state = "over" end
     end
   end
 end
 
--- the ball saver starts when a freshly served ball first reaches the table
-local function arm_saver()
-  if state == "play" and saver == 0 and ball.x < 154 then saver = 15 * 60 end
-end
+-- ============================ baking ============================
+-- The static art of a table is rendered ONCE (on entering it) from the
+-- sprite sheet's texture tiles and saved into map RAM; every frame then
+-- starts with a single memcpy.
+local T_RIM, T_SLING, T_FLOOR, T_BARK = 16, 17, 64, 66
 
--- ============================ baking the screens ============================
--- Static art is rendered ONCE per screen from the sprite sheet:
---   walls  = bark texture (tile 66, 16x16) with a moss rim (tile 16 rows 0-3)
---   floor  = forest floor texture (tile 64) with a contact shadow (rows 4-5)
---   slings / posts / gate = their own 8x8 texture tiles
--- Repaint those tiles in the sprite editor and the whole table restyles.
-local T_RIM, T_SLING, T_POST, T_GATE, T_FLOOR, T_BARK = 16, 17, 18, 19, 64, 66
-
-local function sget(id, x, y) -- read a pixel from the sprite sheet
-  return peek4(0x8000 + id * 64 + y * 8 + x)
-end
-local function tex16(id, x, y) -- sample a 16x16 texture made of 4 tiles
+local function sget(id, x, y) return peek4(0x8000 + id * 64 + y * 8 + x) end
+local function tex16(id, x, y)
   local tx, ty = x % 16, y % 16
   return sget(id + (tx // 8) + (ty // 8) * 16, tx % 8, ty % 8)
 end
 
-local function solid_vis(a) return a == WALL or a == SLING or a == POST or a == GATE end
-
--- Chebyshev distance (capped) from every pixel to the nearest pixel where
--- is_src() is true. Two passes, O(pixels).
 local function dist_field(is_src, cap)
   local d = {}
   for i = 0, WW * WH - 1 do d[i] = is_src(cmap[i]) and 0 or cap end
@@ -607,211 +996,199 @@ local function dist_field(is_src, cap)
   return d
 end
 
-local slingRim = {{}, {}} -- kicking-face pixels, lit up when a sling fires
+local slingRim = {{}, {}}
+local DECOR = {14, 15, 24, 25, 26, 27}
 
-local function bake_pixel(x, wy, dOpen, dWall)
-  local i = wy * WW + x
-  local a = cmap[i]
-  if not solid_vis(a) then
-    local dw = dWall[i]
-    if dw <= 2 then return sget(T_RIM, (x + wy) % 8, 3 + dw) end
-    return tex16(T_FLOOR, x, wy)
-  end
-  local de = dOpen[i]
-  if a == SLING then
-    if de == 1 then
-      local list = slingRim[x < 80 and 1 or 2]
-      list[#list + 1] = i
-      return C_GOLD
-    end
-    return sget(T_SLING, x % 8, wy % 8)
-  elseif a == POST then
-    return de == 1 and C_WHITE or sget(T_POST, x % 8, wy % 8)
-  elseif a == GATE then
-    return sget(T_GATE, x % 8, wy % 8)
-  end
-  if de <= 4 then return sget(T_RIM, (x + wy) % 8, de - 1) end
-  return tex16(T_BARK, x, wy)
-end
-
--- decorations baked into the background: {sprite, x, y, w, h}
-local DECOR = {
-  {14, 8, 88}, {15, 146, 120}, {24, 8, 130}, {25, 146, 92},
-  {68, 4, 40, 2, 2}, {70, 132, 6, 2, 2}, {26, 22, 116},
-  {24, 60, 236}, {14, 66, 244}, {26, 92, 240}, {25, 100, 236}, {15, 76, 248},
-  {8, 140, 62}, {27, 30, 20}, {27, 136, 30},
-}
-
-local function bake_decor(top)
-  for _, d in ipairs(DECOR) do
-    local w, h = d[4] or 1, d[5] or 1
-    spr(d[1], d[2], d[3] - top, 0, 1, 0, 0, w, h)
-  end
-  -- plunger lane chevrons, in the rim colours
-  for y = 196, 236, 10 do
-    pix(164, y - top, C_LIME) pix(165, y - top, C_LIME)
-    pix(163, y + 1 - top, C_LEAF) pix(166, y + 1 - top, C_LEAF)
-  end
-  -- "FAIRY RING" lettering on the top screen floor
-  print("FAIRY", 21, 100 - top, C_FLOORL, false, 1, true)
-  print("RING", 23, 107 - top, C_FLOORL, false, 1, true)
-end
-
-local MINI_X, MINI_Y = 186, 60
+local HUD_X = WW
 
 local function bake_hud()
-  -- bark frame with an inset night-sky panel
   for y = 0, 135 do
-    for x = WW, 239 do pix(x, y, tex16(T_BARK, x, y)) end
+    for x = HUD_X, 239 do pix(x, y, tex16(T_BARK, x, y)) end
   end
-  rect(WW + 4, 3, 240 - WW - 7, 130, C_KEY)
-  rectb(WW + 3, 2, 240 - WW - 5, 132, C_MOSS)
-  print("FAIRY", 186, 7, C_OUT, false, 1, false)
-  print("FAIRY", 185, 6, C_PINK, false, 1, false)
-  print("RING", 192, 15, C_OUT, false, 1, false)
-  print("RING", 191, 14, C_GOLD, false, 1, false)
-  print("SCORE", 184, 26, C_LILAC, false, 1, true)
-  print("BALL", 184, 44, C_LILAC, false, 1, true)
-  -- minimap of the whole world at 1/4 scale
-  for my = 0, WH // 4 - 1 do
-    for mx = 0, WW // 4 - 1 do
-      local solid = 0
-      for sy = 0, 3, 2 do
-        for sx = 0, 3, 2 do
-          if solid_vis(cmap[(my*4+sy) * WW + mx*4+sx]) then solid = solid + 1 end
-        end
-      end
-      pix(MINI_X + mx, MINI_Y + my, solid >= 3 and C_BARKD or C_FLOOR)
-    end
-  end
+  rect(HUD_X + 3, 3, 240 - HUD_X - 6, 130, C_KEY)
+  rectb(HUD_X + 2, 2, 240 - HUD_X - 4, 132, C_MOSS)
+  print("FAIRY", HUD_X + 7, 7, C_OUT) print("FAIRY", HUD_X + 6, 6, C_PINK)
+  print("RING", HUD_X + 41, 7, C_OUT) print("RING", HUD_X + 40, 6, C_GOLD)
+  print("SCORE", HUD_X + 6, 17, C_LILAC, false, 1, true)
+  print("GOALS", HUD_X + 6, 58, C_LILAC, false, 1, true)
 end
 
-local function bake_screens()
-  local dOpen = dist_field(function(a) return not solid_vis(a) end, 6)
-  local dWall = dist_field(solid_vis, 6)
-  for v = 1, 2 do
-    local top = VIEWS[v]
-    cls(0)
-    slingRim = {{}, {}}
-    for y = 0, 135 do
-      local wy = top + y
-      for x = 0, WW - 1 do pix(x, y, bake_pixel(x, wy, dOpen, dWall)) end
+bake = function()
+  local solid = function(a) return a ~= EMPTY end
+  local dOpen = dist_field(function(a) return a == EMPTY end, 6)
+  local dWall = dist_field(solid, 6)
+  local rng = RNG(masterSeed + cur.idx * 31)
+  cls(0)
+  slingRim = {{}, {}}
+  for y = 0, WH - 1 do
+    for x = 0, WW - 1 do
+      local i = y * WW + x
+      local a, c = cmap[i]
+      if a == EMPTY then
+        local dw = dWall[i]
+        c = dw <= 2 and sget(T_RIM, (x + y) % 8, 3 + dw) or tex16(T_FLOOR, x, y)
+      elseif a == SLING then
+        if dOpen[i] == 1 then
+          local l = slingRim[x < CX and 1 or 2]
+          l[#l + 1] = i
+          c = C_GOLD
+        else c = sget(T_SLING, x % 8, y % 8) end
+      else
+        local de = dOpen[i]
+        c = de <= 4 and sget(T_RIM, (x + y) % 8, de - 1) or tex16(T_BARK, x, y)
+      end
+      pix(x, y, c)
     end
-    bake_decor(top)
-    bake_hud()
-    memcpy(SNAP + (v - 1) * SCRBYTES, 0, SCRBYTES)
   end
+  -- decorations on the wall mass (never on the playfield)
+  for _ = 1, 40 do
+    local x, y = rng.int(WW - 8), rng.int(WH - 8)
+    if dOpen[(y + 4) * WW + x + 4] >= 5 and dOpen[y * WW + x] >= 2 and dOpen[(y + 7) * WW + x + 7] >= 2 then
+      spr(rng.pick(DECOR), x, y, 0)
+    end
+  end
+  -- top exit chevrons
+  for k = 0, 2 do
+    local y = 2 + k * 4
+    for dx = -3, 3 do pix(CX + dx, y + math.abs(dx), C_FLOORL) end
+  end
+  bake_hud()
+  memcpy(SNAP, 0, SCRBYTES)
 end
 
 -- ============================ drawing ============================
-local function draw_flipper(f, top)
-  local k = (f.s // 1) // 2 -- 8 frames for 16 states
+local function palswap(a, b) poke4(0x3FF0 * 2 + a, b) end
+local function palreset() for i = 0, 15 do poke4(0x3FF0 * 2 + i, i) end end
+
+local function draw_flipper(f)
+  local k = (f.s // 1) // 2
   local id = 256 + (k // 4) * 48 + (k % 4) * 4
-  if f.dir == 1 then
-    spr(id, f.px - 6, FL_PIVOT_Y - 12 - top, 0, 1, 0, 0, 4, 3)
-  else
-    spr(id, f.px - 25, FL_PIVOT_Y - 12 - top, 0, 1, 1, 0, 4, 3)
-  end
+  if f.dir == 1 then spr(id, f.px - 6, f.py - 12, 0, 1, 0, 0, 4, 3)
+  else spr(id, f.px - 25, f.py - 12, 0, 1, 1, 0, 4, 3) end
 end
 
 local function draw_world()
-  local top = VIEWS[view]
   local sx = (shake > 0) and (frame % 2 * 2 - 1) or 0
-  memcpy(0, SNAP + (view - 1) * SCRBYTES, SCRBYTES)
+  memcpy(0, SNAP, SCRBYTES)
 
-  -- portal (the fairy ring hole)
-  spr(44 + ((frame // 12) % 2) * 2, hole.x - 8 + sx, hole.y - 8 - top, 0, 1, 0, 0, 2, 2)
-  for _, b in ipairs(bumpers) do
-    local lit = b.flash > 0
-    spr(lit and 34 or 32, b.x - 8 + sx, b.y - 8 - top - (lit and 1 or 0), 0, 1, 0, 0, 2, 2)
-  end
-  for _, t in ipairs(targets) do
-    spr(t.lit and 38 or 36, t.x - 8 + sx, t.y - 8 - top, 0, 1, 0, 0, 2, 2)
-  end
-  for si, s in ipairs(slings) do
-    if s.flash > 0 then
-      for _, i in ipairs(slingRim[si]) do
-        local wy = i // WW
-        if wy >= top and wy < top + 136 then pix(i % WW + sx, wy - top, C_WHITE) end
-      end
+  for _, o in ipairs(cur.objs) do
+    local x, y = o.x + sx, o.y
+    if o.kind == "bumper" then
+      spr(o.flash > 0 and 34 or 32, x - 8, y - 8 - (o.flash > 0 and 1 or 0), 0, 1, 0, 0, 2, 2)
+    elseif o.kind == "gold" then
+      spr(o.flash > 0 and 108 or 106, x - 8, y - 8, 0, 1, 0, 0, 2, 2)
+    elseif o.kind == "lantern" then
+      spr((frame // 8) % 2 == 0 and 96 or 98, x - 8, y - 7, 0, 1, 0, 0, 2, 2)
+    elseif o.kind == "toad" then
+      spr(o.lit and 38 or 36, x - 8, y - 9, 0, 1, 0, 0, 2, 2)
+    elseif o.kind == "acorn" then
+      if o.alive then spr(100 + math.min(2, o.hits) * 2, x - 8, y - 7, 0, 1, 0, 0, 2, 2) end
+    elseif o.kind == "bud" then
+      spr(o.lit and 11 or 10, x - 4, y - 4, 0)
+    elseif o.kind == "hole" or o.kind == "warp" then
+      if o.kind == "warp" then palswap(C_CYAN, C_PINK) palswap(C_LILAC, C_GOLD) end
+      spr(44 + ((frame // 12) % 2) * 2, x - 8, y - 8, 0, 1, 0, 0, 2, 2)
+      palreset()
     end
   end
-  for _, l in ipairs(lanes) do
-    local lit = l.lit and (frame // 16) % 4 ~= 0
-    spr(lit and 11 or 10, l.x - 4 + sx, l.y - 10 - top, 0)
+  -- kit: kickback arrows, posts, updraft
+  for i, side in ipairs({-1, 1}) do
+    local lit = cur.kick[i] and (frame // 10) % 2 == 0
+    spr(lit and 13 or 12, side_x(KIT.kick.dx, side) - 4, KIT.kick.y - 6, 0)
   end
-  for _, k in ipairs(kickbacks) do
-    local lit = k.lit and (frame // 10) % 2 == 0
-    spr(lit and 13 or 12, k.x - 4 + sx, k.y - 12 - top, 0)
+  for _, p in ipairs(post_list()) do
+    local blink = (cur.posts < 120 and cur.posts > 0 and p.y < 100) or
+                  (cur.center < 120 and p.y > 100 and not cur.bonus)
+    if not blink or frame % 8 < 5 then spr(30, p.x - 4, p.y - 4, 0) end
   end
-  -- plunger spring
-  spr(20 + math.min(3, (charge * 4) // 1), 161, 250 - top, 0)
+  if cur.updraft > 0 then
+    for y = 12, 80, 10 do
+      local oy = (y - frame) % 70 + 12
+      spr(28, CX - 4, oy, 0)
+    end
+  end
+  for si, l in ipairs(slingRim) do
+    if (cur.slingCool or 0) > 3 and ((si == 1) == (ball.x < CX)) then
+      for _, i in ipairs(l) do pix(i % WW + sx, i // WW, C_WHITE) end
+    end
+  end
+  for _, f in ipairs(cur.flippers) do draw_flipper(f) end
 
-  for _, f in ipairs(flippers) do draw_flipper(f, top) end
-
-  -- ball: 4 rolling frames driven by the spin
-  local bx, by = ball.x // 1 + sx, ball.y // 1 - top
-  if not (state == "hold" and holdKind == "hole" and holdT % 6 < 3) then
+  local bx, by = ball.x // 1 + sx, ball.y // 1
+  if state ~= "lost" and not (state == "hold" and holdT % 6 < 3) then
     spr((ball.rot // 64) % 4, bx - 4, by - 4, 0)
   end
-
-  for i = #parts, 1, -1 do
-    local p = parts[i]
-    p.x, p.y, p.t = p.x + p.vx, p.y + p.vy, p.t - 1
-    if p.t <= 0 then table.remove(parts, i)
-    else spr(4 + (3 - math.min(3, p.t // 6)), p.x - 4 + sx, p.y - 4 - top, 0) end
+  for _, p in ipairs(parts) do
+    spr(4 + (3 - math.min(3, p.t // 6)), p.x - 4 + sx, p.y - 4, 0)
   end
-
   local fy = fairy.y + math.sin(frame / 20) * 2
-  spr(40 + ((frame // 6) % 2) * 2, fairy.x - 8 + sx, fy - 8 - top, 0, 1,
+  spr(40 + ((frame // 6) % 2) * 2, fairy.x - 8 + sx, fy - 8, 0, 1,
       fairy.tx < fairy.x and 1 or 0, 0, 2, 2)
 end
 
+local TRIG_SPR = {BUDS = 10, TOADS = 36, ACORN = 100}
+
 local function draw_hud()
-  print(string.format("%9d", score), 182, 33, C_WHITE, true, 1, false)
-  for i = 1, 3 do spr(i <= balls and 0 or 9, 182 + i * 9, 50, 0) end
-  if mult > 1 then print("x" .. mult, 224, 44, C_GOLD, false, 1, true) end
-  if saver > 0 and (saver > 180 or frame % 16 < 8) then
-    print("SAVE", 216, 26, C_CYAN, false, 1, true)
+  local hx = HUD_X + 6
+  print(string.format("%8d", score), hx, 24, C_WHITE, true, 1, false)
+  for i = 1, 3 do spr(i <= balls and 0 or 9, hx + (i - 1) * 9, 33, 0) end
+  if mult > 1 then print("x" .. mult, hx + 30, 35, C_GOLD, false, 1, true) end
+  if saver > 0 and (saver > 120 or frame % 16 < 8) then print("SAVE", hx + 52, 35, C_CYAN, false, 1, true) end
+  print("TABLE " .. cur.idx, hx, 45, cur.bonus and C_GOLD or C_LIME, false, 1, true)
+  if floorIdx > 0 then print("FLOOR " .. floorIdx, hx + 40, 45, C_LILAC, false, 1, true) end
+  -- goals: trigger -> reward with progress
+  local y = 66
+  if #cur.events == 0 then
+    print(cur.bonus and "HIT THE RING" or "CLIMB!", hx, y, C_LILAC, false, 1, true)
   end
-  -- minimap: current screen and the ball
-  rectb(MINI_X - 1, MINI_Y + VIEWS[view] // 4 - 1, WW // 4 + 2, 136 // 4 + 2, C_LIME)
-  pix(MINI_X + ball.x // 4, MINI_Y + ball.y // 4, C_PINK)
+  for _, ev in ipairs(cur.events) do
+    local n, tot = 0, #ev.members
+    if ev.trigger == "ACORN" then n, tot = ev.members[1].hits, 3
+      if not ev.members[1].alive then n = 3 end
+    else for _, o in ipairs(ev.members) do if o.lit then n = n + 1 end end end
+    local c = ev.times > 0 and C_LIME or C_WHITE
+    print(ev.trigger .. " " .. n .. "/" .. tot, hx, y, c, false, 1, true)
+    print(">" .. REWARD_LABEL[ev.reward], hx + 4, y + 7, ev.times > 0 and C_LIME or C_GOLD, false, 1, true)
+    y = y + 16
+  end
+  -- the tower: tables around this one
+  for k = -3, 3 do
+    local idx = cur.idx + k
+    if idx >= 0 then
+      local ty = 104 - k * 5
+      local t = tables[idx]
+      local c = C_FLOOR
+      if t and t.cleared then c = C_LIME elseif t and t.visited then c = C_MOSS end
+      if is_bonus(idx) then c = C_GOLD end
+      rect(229, ty, 6, 4, c)
+      if k == 0 then rectb(228, ty - 1, 8, 6, C_WHITE) end
+    end
+  end
   if msgT > 0 and (msgT > 30 or frame % 8 < 4) then
-    print(msg, 182, 127, C_GOLD, false, 1, true)
-  elseif state == "plunge" and frame % 40 < 30 then
-    print("DOWN:LAUNCH", 182, 127, C_LILAC, false, 1, true)
+    print(msg, hx, 127, C_GOLD, false, 1, true)
+  elseif state == "ready" and frame % 40 < 30 then
+    print("FLIP TO LAUNCH", hx, 127, C_LILAC, false, 1, true)
   end
   if state == "title" or state == "over" then
-    rect(24, 50, 128, 36, C_KEY) rectb(24, 50, 128, 36, C_PINK)
-    rectb(26, 52, 124, 32, C_MOSS)
+    rect(15, 46, 120, 40, C_KEY) rectb(15, 46, 120, 40, C_PINK) rectb(17, 48, 116, 36, C_MOSS)
     local t = state == "over" and "GAME OVER" or "FAIRY RING"
-    print(t, 88 - #t * 3, 58, C_GOLD)
-    if frame % 40 < 28 then print("PRESS Z OR X", 52, 72, C_LILAC, false, 1, false) end
+    print(t, CX - #t * 3, 54, C_GOLD)
+    if state == "over" then print("REACHED TABLE " .. best, CX - 33, 64, C_LILAC, false, 1, true) end
+    if frame % 40 < 28 then print("PRESS Z OR X", CX - 35, 74, C_LILAC) end
   end
 end
 
 local function update_fairy()
-  -- hover near the ring; follow the ball loosely while it is on the top screen
-  if ball.y < 130 and state == "play" then
-    fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
-  else
-    fairy.tx = hole.x - 16 + math.cos(frame / 70) * 10
-    fairy.ty = hole.y - 18 + math.sin(frame / 50) * 6
-  end
+  if state == "play" then fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
+  else fairy.tx, fairy.ty = CX + 40 + math.cos(frame / 70) * 10, 30 + math.sin(frame / 50) * 6 end
   fairy.x = fairy.x + (fairy.tx - fairy.x) * 0.04
   fairy.y = fairy.y + (fairy.ty - fairy.y) * 0.04
 end
 
-local function update_view()
-  if view == 2 and ball.y < VIEWS[2] + 4 then view = 1
-  elseif view == 1 and ball.y >= 132 then view = 2 end
-end
-
 -- ============================ main ============================
 function BOOT()
-  build_cmap()
-  bake_screens()
+  masterSeed = 1
+  enter_table(0)
   serve()
   state = "title"
 end
@@ -819,8 +1196,7 @@ end
 function TIC()
   update()
   if state ~= "title" and state ~= "over" then physics() end
-  arm_saver()
-  update_view()
+  transitions()
   update_fairy()
   draw_world()
   draw_hud()
@@ -828,14 +1204,15 @@ end
 
 -- test hook for the headless harness (harmless in the real cart)
 FR = {
-  ball = ball, flippers = flippers, bumpers = bumpers, targets = targets,
-  lanes = lanes, hole = hole, kickbacks = kickbacks,
-  cmap = cmap, WW = WW, WH = WH,
+  ball = ball, cmap = cmap, WW = WW, WH = WH, CX = CX, TOY = TOY,
   set_pad = function(p) vpad = p end,
-  get = function() return state, score, balls, view, saver, mult end,
-  new_game = new_game, physics = physics, update = update, tic = TIC,
-  ring_test = ring_test,
+  get = function() return state, score, balls, cur.idx, saver, mult end,
+  cur = function() return cur end,
+  tables = function() return tables end,
+  generate = generate, paint = paint_table, enter = enter_table,
+  new_game = new_game, physics = physics, update = update,
+  transitions = transitions, ring_test = ring_test,
   force_state = function(s) state = s end,
-  set_view = function(v) view = v end,
-  tic_draw = function() update_view() update_fairy() draw_world() draw_hud() end,
+  floor = function() return floorIdx end,
+  tic_draw = function() update_fairy() draw_world() draw_hud() end,
 }
