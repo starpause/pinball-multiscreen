@@ -1,0 +1,27 @@
+# ROMs, saves, packages and archives: never commit
+*.gb
+*.gbc
+*.gba
+*.apk
+*.sav
+*.rar
+
+# the 1.2 APK split into raw chunks (same bytes as the .apk)
+research/2022 Infinity Pinball (Android)/1.2 Split/
+
+# python / tooling noise
+__pycache__/
+*.pyc
+tic80 build/claude/tests/out/
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# TIC-80 local cache
+.local/
+
+# extracted by us from the paid APK: keep local, don't redistribute
+research/2022 Infinity Pinball (Android)/ripped_v1.12/
+research/2022 Infinity Pinball (Android)/analysis/il2cpp_dump.cs

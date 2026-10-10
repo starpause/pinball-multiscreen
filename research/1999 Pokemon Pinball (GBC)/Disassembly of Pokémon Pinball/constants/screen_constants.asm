@@ -1,0 +1,13 @@
+; See wCurrentScreen in wram.asm
+
+; unreachable debug menu, which allows selecting DMG or Game Boy Color during boot
+DEF SCREEN_SELECT_GAMEBOY_TARGET   EQU $0
+
+DEF SCREEN_ERASE_ALL_DATA  EQU $1
+DEF SCREEN_COPYRIGHT       EQU $2
+DEF SCREEN_TITLESCREEN     EQU $3
+DEF SCREEN_PINBALL_GAME    EQU $4
+DEF SCREEN_POKEDEX         EQU $5
+DEF SCREEN_OPTIONS         EQU $6
+DEF SCREEN_HIGH_SCORES     EQU $7
+DEF SCREEN_FIELD_SELECT    EQU $8

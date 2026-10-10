@@ -1,0 +1,3540 @@
+Func_24319: ; 0x2438f
+	ld a, [wd6f4]
+	cp $0
+	jr z, .asm_24333
+	ld a, [wMeowthJewel0XCoord]
+	sub $4
+	ld b, a
+	ld a, [wMeowthJewel0YCoord]
+	add $4
+	ld c, a
+	call Func_24405
+	ld a, $0
+	jr c, .asm_24373
+.asm_24333
+	ld a, [wd6f4]
+	cp $1
+	jr z, .asm_2434d
+	ld a, [wMeowthJewel1XCoord]
+	sub $4
+	ld b, a
+	ld a, [wMeowthJewel1YCoord]
+	add $4
+	ld c, a
+	call Func_24405
+	ld a, $1
+	jr c, .asm_24373
+.asm_2434d
+	ld a, [wd6f4]
+	cp $2
+	ret z
+	ld a, [wMeowthJewel2XCoord]
+	sub $4
+	ld b, a
+	ld a, [wMeowthJewel2YCoord]
+	add $4
+	ld c, a
+	call Func_24405
+	ld a, $2
+	jr c, .asm_24373
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f8
+	add hl, bc
+	ld [hl], $0
+	ret
+
+.asm_24373
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f8
+	add hl, bc
+	inc [hl]
+	ld d, $4
+	ld a, [wd6f4]
+	add d
+	ld d, a
+	ld a, [hl]
+	cp d
+	ret nc
+	ld hl, wd6f5
+	add hl, bc
+	ld [hl], $0
+	ret
+
+Func_2438f: ; 0x2438f
+	ld a, [wd6f4]
+	cp $a
+	jr z, .asm_243a9
+	ld a, [wMeowthJewel3XCoord]
+	sub $4
+	ld b, a
+	ld a, [wMeowthJewel3YCoord]
+	add $4
+	ld c, a
+	call Func_24405
+	ld a, $a
+	jr c, .asm_243e9
+.asm_243a9
+	ld a, [wd6f4]
+	cp $b
+	jr z, .asm_243c3
+	ld a, [wMeowthJewel4XCoord]
+	sub $4
+	ld b, a
+	ld a, [wMeowthJewel4YCoord]
+	add $4
+	ld c, a
+	call Func_24405
+	ld a, $b
+	jr c, .asm_243e9
+.asm_243c3
+	ld a, [wd6f4]
+	cp $c
+	ret z
+	ld a, [wMeowthJewel5XCoord]
+	sub $4
+	ld b, a
+	ld a, [wMeowthJewel5YCoord]
+	add $4
+	ld c, a
+	call Func_24405
+	ld a, $c
+	jr c, .asm_243e9
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f8
+	add hl, bc
+	ld [hl], $0
+	ret
+
+.asm_243e9
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f8
+	add hl, bc
+	inc [hl]
+	ld d, $4
+	ld a, [wd6f4]
+	add d
+	ld d, a
+	ld a, [hl]
+	cp d
+	ret nc
+	ld hl, wd6f5
+	add hl, bc
+	ld [hl], $0
+	ret
+
+Func_24405: ; 0x24405
+	ld hl, wMeowthJewel0XCoord
+	ld a, [wd6f4]
+	ld e, a
+	ld d, $0
+	add hl, de
+	ld a, [hl]
+	add $8
+	sub b
+	cp $18
+	jr nc, .asm_24428
+	ld b, a
+	ld hl, wMeowthJewel0YCoord
+	add hl, de
+	ld a, [hl]
+	add $8
+	sub c
+	cp $18
+	jr nc, .asm_24428
+	ld c, a
+	ld d, b
+	scf
+	ret
+
+.asm_24428
+	and a
+	ret
+
+ResolveMeowthBonusGameObjectCollisions: ; 0x2442a
+	ld a, [wd710]
+	jr nz, .asm_2443f
+	ld a, [wMeowthStageBonusCounter]
+	dec a
+	dec a
+	cp $fe
+	jr z, .asm_24447
+	cp $ff
+	jr z, .asm_24447
+	ld [wd79a], a
+.asm_2443f
+	ld de, wd79a
+	call Func_24f00
+	jr .asm_2444b
+
+.asm_24447
+	xor a
+	ld [wd79a], a
+.asm_2444b
+	call TryCloseGate_MeowthBonus
+	call Func_245ab
+	call Func_248ac
+	call Func_24d07
+	ld a, [wMeowthStageScore]
+	cp $14
+	jr c, .asm_24498
+	ld a, [wd712]
+	cp $2
+	jr nc, .asm_24498
+	ld a, [wNextBonusStage]
+	cp BONUS_STAGE_ORDER_SEEL
+	ret z
+	ld a, BONUS_STAGE_ORDER_SEEL
+	ld [wd712], a
+	ld [wNextBonusStage], a
+	ld a, $96
+	ld [wd739], a
+	ld de, MUSIC_NOTHING
+	call PlaySong
+	ld a, $1
+	ld [wCompletedBonusStage], a
+	call FillBottomMessageBufferWithBlackTile
+	call EnableBottomText
+	ld hl, wScrollingText3
+	ld de, MeowthStageClearedText
+	call LoadScrollingText
+	lb de, $4b, $2a
+	call PlaySoundEffect
+.asm_24498
+	ld a, [wd712]
+	cp $4
+	jr nz, .asm_244b0
+	ld a, [wSFXTimer]
+	and a
+	jr nz, .asm_244b0
+	ld de, MUSIC_MEOWTH_STAGE
+	call PlaySong
+	ld a, $5
+	ld [wd712], a
+.asm_244b0
+	ld a, [wd712]
+	cp $4
+	jr z, .asm_244c1
+	callba PlayLowTimeSfx
+.asm_244c1
+	ld a, [wTimeRanOut]
+	and a
+	ret z
+	xor a
+	ld [wTimeRanOut], a
+	ld a, $1
+	ld [wFlippersDisabled], a
+	call LoadFlippersPalette
+	callba StopTimer
+	ld a, $1
+	ld [wDisableMeowthJewelProduction], a
+	ld a, $1
+	ld [wd712], a
+	ld hl, MeowthAnimationData5
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $4
+	ld [wMeowthState], a
+	ret
+
+TryCloseGate_MeowthBonus: ; 0x244f5
+	ld a, [wMeowthBonusClosedGate]
+	and a
+	ret nz
+	ld a, [wBallXPos + 1]
+	cp 138
+	ret nc
+	ld a, 1
+	ld [wStageCollisionState], a
+	ld [wMeowthBonusClosedGate], a
+	callba LoadStageCollisionAttributes
+	call Func_24516
+	ret
+
+Func_24516: ; 0x24516
+	ld a, [wStageCollisionState]
+	sla a
+	ld c, a
+	ld b, $0
+	ld hl, TileDataPointers_24533
+	ldh a, [hGameBoyColorFlag]
+	and a
+	jr z, .asm_24529
+	ld hl, TileDataPointers_2456f
+.asm_24529
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	ld a, Bank(TileDataPointers_24533)
+	call QueueGraphicsToLoad
+	ret
+
+TileDataPointers_24533: ; 0x24533
+	dw TileData_24537
+	dw TileData_2453a
+
+TileData_24537: ; 0x24537
+	db $01
+	dw TileData_2453D
+
+TileData_2453a: ; 0x2453a
+	db $01
+	dw TileData_24556
+
+TileData_2453D: ; 0x2453D
+	dw LoadTileLists
+	db $09 ; total number of tiles
+
+	db $02 ; number of tiles
+	dw vBGMap + $113
+	db $01, $02
+
+	db $02 ; number of tiles
+	dw vBGMap + $133
+	db $FF, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $152
+	db $80, $FD, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $172
+	db $F6, $FA
+
+	db $00 ; terminator
+
+TileData_24556: ; 0x24556
+	dw LoadTileLists
+	db $09 ; total number of tiles
+
+	db $02 ; number of tiles
+	dw vBGMap + $113
+	db $E9, $E5
+
+	db $02 ; number of tiles
+	dw vBGMap + $133
+	db $E7, $E3
+
+	db $03 ; number of tiles
+	dw vBGMap + $152
+	db $12, $13, $E4
+
+	db $02 ; number of tiles
+	dw vBGMap + $172
+	db $10, $11
+
+	db $00 ; terminator
+
+TileDataPointers_2456f: ; 0x2456f
+	dw TileData_24573
+	dw TileData_24576
+
+TileData_24573: ; 0x
+	db $01
+	dw TileData_24579
+
+TileData_24576: ; 0x
+	db $01
+	dw TileData_24592
+
+TileData_24579: ; 0x24579
+	dw LoadTileLists
+	db $09 ; total number of tiles
+
+	db $02 ; number of tiles
+	dw vBGMap + $113
+	db $F6, $F5
+
+	db $02 ; number of tiles
+	dw vBGMap + $133
+	db $F4, $F3
+
+	db $03 ; number of tiles
+	dw vBGMap + $152
+	db $80, $F1, $F2
+
+	db $02 ; number of tiles
+	dw vBGMap + $172
+	db $EA, $EE
+
+	db $00 ; terminator
+
+TileData_24592: ; 0x24592
+	dw LoadTileLists
+	db $09 ; total number of tiles
+
+	db $02 ; number of tiles
+	dw vBGMap + $113
+	db $E5, $E3
+
+	db $02 ; number of tiles
+	dw vBGMap + $133
+	db $E4, $E2
+
+	db $03 ; number of tiles
+	dw vBGMap + $152
+	db $F0, $EF, $E3
+
+	db $02 ; number of tiles
+	dw vBGMap + $172
+	db $ED, $EC
+
+	db $00 ; terminator
+
+Func_245ab: ; 0x245ab
+	ld a, [wd6e7]
+	and a
+	jr z, .asm_24621
+	cp $2
+	jr z, .asm_24621
+	ld a, $1
+	ld [wd6f3], a
+	ld a, [wMeowthYPosition]
+	cp 32
+	jr z, .locatedAtBottom
+	cp 16
+	jr z, .locatedAtTop
+	jr .asm_245cf
+
+.locatedAtBottom
+	call Func_247d9
+	jr .asm_245cf
+
+.locatedAtTop
+	call Func_24c28
+.asm_245cf
+	xor a
+	ld [wd6e7], a
+	ld [wd6f3], a
+	ld a, $ff
+	ld [wRumblePattern], a
+	ld a, $3
+	ld [wRumbleDuration], a
+	lb de, $00, $33
+	call PlaySoundEffect
+	ld bc, OneThousandPoints
+	callba AddBigBCD6FromQueueWithBallMultiplier
+	xor a
+	ld [wMeowthStageBonusCounter], a
+	ld a, [wMeowthState]
+	cp $2
+	jr nc, .asm_24621
+	and a
+	jr nz, .asm_24611
+	ld hl, MeowthAnimationData3
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $2
+	ld [wMeowthState], a
+	jr .asm_24651
+
+.asm_24611
+	ld hl, MeowthAnimationData4
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $3
+	ld [wMeowthState], a
+	jr .asm_24651
+
+.asm_24621
+	ld a, [wDisableMeowthJewelProduction]
+	and a
+	jr z, .asm_2462e
+	ld a, $4
+	ld [wMeowthState], a
+	jr .asm_24651
+
+.asm_2462e
+	ld a, [wMeowthState]
+	cp $2
+	jr nc, .asm_24651
+	ld a, [wNumActiveJewelsBottom]
+	cp 3
+	jr nz, .asm_24651
+	ld a, [wNumActiveJewelsTop]
+	cp 3
+	jr nz, .asm_24651
+	ld hl, MeowthAnimationData5
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $4
+	ld [wMeowthState], a
+.asm_24651
+	ld a, [wMeowthState]
+	cp $2
+	call c, Func_24709
+	call Func_2465d
+	ret
+
+Func_2465d: ; 0x2465d
+	ld a, [wMeowthState]
+	sla a
+	ld c, a
+	ld b, $0
+	ld hl, MewothAnimationDataTable ; 0x246e2
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	ld de, wMeowthAnimation
+	call UpdateAnimation
+	ret nc
+	ld a, [wMeowthState]
+	and a
+	jr nz, .asm_24689
+	ld a, [wMeowthAnimationIndex]
+	cp $4
+	ret nz
+	ld hl, MeowthAnimationData1
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ret
+
+.asm_24689
+	cp $1
+	jr nz, .asm_2469d
+	ld a, [wMeowthAnimationIndex]
+	cp $4
+	ret nz
+	ld hl, MeowthAnimationData2
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ret
+
+.asm_2469d
+	cp $2
+	jr nz, .asm_246b5
+	ld a, [wMeowthAnimationIndex]
+	cp $1
+	ret nz
+	ld hl, MeowthAnimationData1
+	ld de, wMeowthAnimation
+	call InitAnimation
+	xor a
+	ld [wMeowthState], a
+	ret
+
+.asm_246b5
+	cp $3
+	jr nz, .asm_246ce
+	ld a, [wMeowthAnimationIndex]
+	cp $1
+	ret nz
+	ld hl, MeowthAnimationData2
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $1
+	ld [wMeowthState], a
+	ret
+
+.asm_246ce
+	cp $4
+	jr nz, .asm_24689
+	ld a, [wMeowthAnimationIndex]
+	cp $2
+	ret nz
+	ld hl, MeowthAnimationData5
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ret
+
+MewothAnimationDataTable: ; 0x246e2
+	dw MeowthAnimationData1
+	dw MeowthAnimationData2
+	dw MeowthAnimationData3
+	dw MeowthAnimationData4
+	dw MeowthAnimationData5
+
+MeowthAnimationData1: ; 0x246ec
+; Each entry is [sprite id][duration]
+	db $10, MEOWTHSPRITE_LEFT_WALK_0
+	db $0B, MEOWTHSPRITE_LEFT_WALK_1
+	db $10, MEOWTHSPRITE_LEFT_WALK_2
+	db $0C, MEOWTHSPRITE_LEFT_WALK_1
+	db $00 ; terminator
+
+MeowthAnimationData2: ; 0x246f5
+; Each entry is [sprite id][duration]
+	db $10, MEOWTHSPRITE_RIGHT_WALK_0
+	db $0B, MEOWTHSPRITE_RIGHT_WALK_1
+	db $10, MEOWTHSPRITE_RIGHT_WALK_2
+	db $0C, MEOWTHSPRITE_RIGHT_WALK_1
+	db $00 ; terminator
+
+MeowthAnimationData3: ; 0x246fe
+; Each entry is [sprite id][duration]
+	db $16, MEOWTHSPRITE_LEFT_HIT
+	db $00 ; terminator
+
+MeowthAnimationData4: ; 0x24701
+; Each entry is [sprite id][duration]
+	db $16, MEOWTHSPRITE_RIGHT_HIT
+	db $00 ; terminator
+
+MeowthAnimationData5: ; 0x24704
+	db $17, MEOWTHSPRITE_TIMEOUT_0
+	db $17, MEOWTHSPRITE_TIMEOUT_1
+	db $00 ; terminator
+
+Func_24709: ; 0x24709
+	ld a, [wMeowthXPosition]
+	ld hl, wMeowthXMovement
+	add [hl]
+	ld [wMeowthXPosition], a
+	ld hl, wMeowthYMovement
+	ld a, [hl]
+	and a
+	jr z, .asm_24730
+	bit 7, [hl]
+	ld a, [wMeowthYPosition]
+	jr nz, .asm_24724
+	inc a
+	jr .asm_24725
+
+.asm_24724
+	dec a
+.asm_24725
+	cp $21
+	jr z, .asm_24730
+	cp $f
+	jr z, .asm_24730
+	ld [wMeowthYPosition], a
+.asm_24730
+	call UpdateMeowthHorizontalMovement
+	call UpdateMeowthVerticalMovement
+	ret
+
+UpdateMeowthHorizontalMovement: ; 0x24737
+	ld a, [wMeowthXPosition]
+	cp 8
+	jr nc, .asm_24742
+	ld a, 1
+	jr .asm_2475a
+
+.asm_24742
+	cp 120
+	jr c, .asm_2474a
+	ld a, -1
+	jr .asm_2475a
+
+.asm_2474a
+	ldh a, [hFrameCounter]
+	and $3f
+	ret nz
+	call GenRandom
+	bit 7, a
+	ld a, 1
+	jr z, .asm_2475a
+	ld a, -1
+.asm_2475a
+	ld [wMeowthXMovement], a
+	bit 7, a
+	ld a, 1
+	jr z, .asm_24764
+	xor a
+.asm_24764
+	ld [wMeowthState], a
+	ld a, 2
+	ld [wMeowthAnimationFrameCounter], a
+	ret
+
+UpdateMeowthVerticalMovement: ; 0x2476d
+	ld a, [wMeowthYMovement]
+	and a
+	jr z, .asm_247ab
+	cp 1
+	jr z, .asm_24791
+	ld a, [wMeowthYPosition]
+	cp 16
+	jr nz, .asm_2478d
+	ld a, [wd6e7]
+	cp $2
+	jr nz, .asm_2478a
+	ld a, $1
+	ld [wd6e7], a
+.asm_2478a
+	xor a
+	jr .saveYMovement
+
+.asm_2478d
+	ld a, -1
+	jr .saveYMovement
+
+.asm_24791
+	ld a, [wMeowthYPosition]
+	cp 32
+	jr nz, .asm_247a7
+	ld a, [wd6e7]
+	cp $2
+	jr nz, .asm_247a4
+	ld a, $1
+	ld [wd6e7], a
+.asm_247a4
+	xor a
+	jr .saveYMovement
+
+.asm_247a7
+	ld a, 1
+	jr .saveYMovement
+
+.asm_247ab
+	ld a, [wNumActiveJewelsBottom]
+	cp 3
+	jr z, .asm_247cd
+	ld a, [wNumActiveJewelsTop]
+	cp 3
+	jr z, .asm_247d3
+	ldh a, [hFrameCounter]
+	and $3f
+	ret nz
+	call GenRandom
+	bit 0, a
+	ld a, 1
+	jr z, .saveYMovement
+	ld a, -1
+.saveYMovement
+	ld [wMeowthYMovement], a
+	ret
+
+.asm_247cd
+	ld a, $ff
+	ld [wMeowthYMovement], a
+	ret
+
+.asm_247d3
+	ld a, $1
+	ld [wMeowthYMovement], a
+	ret
+
+Func_247d9: ; 0x247d9
+	ld a, [wd6f3]
+	and a
+	ret z
+	ld a, [wMeowthJewel0XCoord]
+	cp $c8
+	jr nz, .asm_24823
+	ld a, [wMeowthXPosition]
+	add $8
+	ld [wMeowthJewel0XCoord], a
+	ld a, [wMeowthYPosition]
+	add $fb
+	ld [wMeowthJewel0YCoord], a
+	ld a, $1
+	ld [wMeowthJewel0State], a
+	xor a
+	ld [wd6f3], a
+	ld [wMeowthJewel0AnimationIndex], a
+	ld [wd6f5], a
+	ld [wd6f8], a
+	ld [wd6fb], a
+	ld a, [wMeowthXPosition]
+	add $14
+	ld b, a
+	ld a, [wBallXPos + 1]
+	cp b
+	jr nc, .asm_2481d
+	ld a, $0
+	ld [wd72a], a
+	jr .asm_24822
+
+.asm_2481d
+	ld a, $1
+	ld [wd72a], a
+.asm_24822
+	ret
+
+.asm_24823
+	ld a, [wMeowthJewel1XCoord]
+	cp $c8
+	jr nz, .asm_24868
+	ld a, [wMeowthXPosition]
+	add $8
+	ld [wMeowthJewel1XCoord], a
+	ld a, [wMeowthYPosition]
+	add $fb
+	ld [wMeowthJewel1YCoord], a
+	ld a, $1
+	ld [wMeowthJewel1State], a
+	xor a
+	ld [wd6f3], a
+	ld [wMeowthJewel1AnimationIndex], a
+	ld [wd6f6], a
+	ld [wd6f9], a
+	ld [wd6fc], a
+	ld a, [wMeowthXPosition]
+	add $14
+	ld b, a
+	ld a, [wBallXPos + 1]
+	cp b
+	jr nc, .asm_24862
+	ld a, $0
+	ld [wd72b], a
+	jr .asm_24867
+
+.asm_24862
+	ld a, $1
+	ld [wd72b], a
+.asm_24867
+	ret
+
+.asm_24868
+	ld a, [wMeowthJewel2XCoord]
+	cp $c8
+	ret nz
+	ld a, [wMeowthXPosition]
+	add $8
+	ld [wMeowthJewel2XCoord], a
+	ld a, [wMeowthYPosition]
+	add $fb
+	ld [wMeowthJewel2YCoord], a
+	ld a, $1
+	ld [wMeowthJewel2State], a
+	xor a
+	ld [wd6f3], a
+	ld [wMeowthJewel2AnimationIndex], a
+	ld [wd6f7], a
+	ld [wd6fa], a
+	ld [wd6fd], a
+	ld a, [wMeowthXPosition]
+	add $14
+	ld b, a
+	ld a, [wBallXPos + 1]
+	cp b
+	jr nc, .asm_248a6
+	ld a, $0
+	ld [wd72c], a
+	jr .asm_248ab
+
+.asm_248a6
+	ld a, $1
+	ld [wd72c], a
+.asm_248ab
+	ret
+
+Func_248ac: ; 0x248ac
+	ld a, [wMeowthJewel0State]
+	cp $1
+	jr nz, .asm_248d3
+	ld a, [wMeowthJewel0AnimationIndex]
+	cp $a
+	jr z, .asm_248c4
+	ld a, $0
+	ld [wd6f4], a
+	call Func_24a30
+	jr .asm_248d3
+
+.asm_248c4
+	ld hl, wNumActiveJewelsBottom
+	inc [hl]
+	ld a, $2
+	ld [wMeowthJewel0State], a
+	lb de, $00, $34
+	call PlaySoundEffect
+.asm_248d3
+	ld a, [wMeowthJewel1State]
+	cp $1
+	jr nz, .asm_248fa
+	ld a, [wMeowthJewel1AnimationIndex]
+	cp $a
+	jr z, .asm_248eb
+	ld a, $1
+	ld [wd6f4], a
+	call Func_24a30
+	jr .asm_248fa
+
+.asm_248eb
+	ld hl, wNumActiveJewelsBottom
+	inc [hl]
+	ld a, $2
+	ld [wMeowthJewel1State], a
+	lb de, $00, $34
+	call PlaySoundEffect
+.asm_248fa
+	ld a, [wMeowthJewel2State]
+	cp $1
+	jr nz, .asm_24921
+	ld a, [wMeowthJewel2AnimationIndex]
+	cp $a
+	jr z, .asm_24912
+	ld a, $2
+	ld [wd6f4], a
+	call Func_24a30
+	jr .asm_24921
+
+.asm_24912
+	ld hl, wNumActiveJewelsBottom
+	inc [hl]
+	ld a, $2
+	ld [wMeowthJewel2State], a
+	lb de, $00, $34
+	call PlaySoundEffect
+.asm_24921
+	ld a, [wMeowthJewel0State]
+	cp $2
+	jr nz, .asm_2492c
+	ld hl, wMeowthJewel0AnimationIndex
+	inc [hl]
+.asm_2492c
+	ld a, [wMeowthJewel1State]
+	cp $2
+	jr nz, .asm_24937
+	ld hl, wMeowthJewel1AnimationIndex
+	inc [hl]
+.asm_24937
+	ld a, [wMeowthJewel2State]
+	cp $2
+	jr nz, .asm_24942
+	ld hl, wMeowthJewel2AnimationIndex
+	inc [hl]
+.asm_24942
+	ld a, [wMeowthJewel0State]
+	cp $3
+	jr nz, .asm_24968
+	ld a, [wMeowthJewel0XCoord]
+	ld b, a
+	ld a, [wMeowthJewel0YCoord]
+	ld c, a
+	ld hl, wMeowthJewel0AnimationIndex
+	inc [hl]
+	ld a, [hl]
+	cp $2
+	jr nz, .asm_2495f
+	call Func_24e7f
+	jr .asm_24968
+
+.asm_2495f
+	cp $a
+	jr nz, .asm_24968
+	ld a, $4
+	ld [wMeowthJewel0State], a
+.asm_24968
+	ld a, [wMeowthJewel1State]
+	cp $3
+	jr nz, .asm_2498e
+	ld a, [wMeowthJewel1XCoord]
+	ld b, a
+	ld a, [wMeowthJewel1YCoord]
+	ld c, a
+	ld hl, wMeowthJewel1AnimationIndex
+	inc [hl]
+	ld a, [hl]
+	cp $2
+	jr nz, .asm_24985
+	call Func_24e7f
+	jr .asm_2498e
+
+.asm_24985
+	cp $a
+	jr nz, .asm_2498e
+	ld a, $4
+	ld [wMeowthJewel1State], a
+.asm_2498e
+	ld a, [wMeowthJewel2State]
+	cp $3
+	jr nz, .asm_249b4
+	ld a, [wMeowthJewel2XCoord]
+	ld b, a
+	ld a, [wMeowthJewel2YCoord]
+	ld c, a
+	ld hl, wMeowthJewel2AnimationIndex
+	inc [hl]
+	ld a, [hl]
+	cp $2
+	jr nz, .asm_249ab
+	call Func_24e7f
+	jr .asm_249b4
+
+.asm_249ab
+	cp $a
+	jr nz, .asm_249b4
+	ld a, $4
+	ld [wMeowthJewel2State], a
+.asm_249b4
+	ld a, [wMeowthJewel0State]
+	cp $4
+	jr nz, .asm_249d0
+	ld a, $c8
+	ld [wMeowthJewel0XCoord], a
+	ld [wMeowthJewel0YCoord], a
+	xor a
+	ld [wMeowthJewel0State], a
+	ld hl, wNumActiveJewelsBottom
+	dec [hl]
+	ld a, [hl]
+	cp $2
+	jr z, .asm_24a06
+.asm_249d0
+	ld a, [wMeowthJewel1State]
+	cp $4
+	jr nz, .asm_249ec
+	ld a, $c8
+	ld [wMeowthJewel1XCoord], a
+	ld [wMeowthJewel1YCoord], a
+	xor a
+	ld [wMeowthJewel1State], a
+	ld hl, wNumActiveJewelsBottom
+	dec [hl]
+	ld a, [hl]
+	cp $2
+	jr z, .asm_24a06
+.asm_249ec
+	ld a, [wMeowthJewel2State]
+	cp $4
+	ret nz
+	ld a, $c8
+	ld [wMeowthJewel2XCoord], a
+	ld [wMeowthJewel2YCoord], a
+	xor a
+	ld [wMeowthJewel2State], a
+	ld hl, wNumActiveJewelsBottom
+	dec [hl]
+	ld a, [hl]
+	cp $2
+	ret nz
+.asm_24a06
+	ld a, [wDisableMeowthJewelProduction]
+	and a
+	ret nz
+	ld a, [wMeowthXMovement]
+	cp $ff
+	jr z, .asm_24a21
+	ld hl, MeowthAnimationData2
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $1
+	ld [wMeowthState], a
+	ret
+
+.asm_24a21
+	ld hl, MeowthAnimationData1
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $0
+	ld [wMeowthState], a
+	ret
+
+Func_24a30: ; 0x24a30
+	ld a, [wd6f4]
+	ld c, a
+	ld b, $0
+	ld hl, wd6f8
+	add hl, bc
+	ld a, [hl]
+	and a
+	jr z, .asm_24a42
+	call Func_24b41
+	ret
+
+.asm_24a42
+	ld a, [wd6f4]
+	ld c, a
+	ld b, $0
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	bit 2, a
+	jr z, .asm_24a5e
+	bit 1, a
+	jr nz, .asm_24a5e
+	bit 0, a
+	jr nz, .asm_24a5e
+	ld hl, wMeowthJewel0AnimationIndex
+	add hl, bc
+	inc [hl]
+.asm_24a5e
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld hl, Data_24af1
+	ld e, a
+	ld d, $0
+	add hl, de
+	ld hl, wd72a
+	add hl, bc
+	ld a, [hl]
+	and a
+	jr nz, .asm_24a97
+.asm_24a72
+	ld hl, wd72a
+	add hl, bc
+	ld [hl], $0
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld a, [hl]
+	push af
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld e, a
+	ld d, $0
+	ld hl, Data_24af1
+	add hl, de
+	pop af
+	add [hl]
+	cp $8e
+	jr nc, .asm_24a97
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld [hl], a
+	jr .asm_24abf
+
+.asm_24a97
+	ld hl, wd72a
+	add hl, bc
+	ld [hl], $1
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld e, a
+	ld d, $0
+	ld hl, Data_24af1
+	add hl, de
+	ld a, [hl]
+	ld d, a
+	ld a, $ff
+	sub d
+	inc a
+	ld d, a
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld a, [hl]
+	add d
+	cp $5
+	jr c, .asm_24a72
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld [hl], a
+.asm_24abf
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld e, a
+	ld d, $0
+	ld hl, Data_24af1
+	add hl, de
+	inc hl
+	ld a, [hl]
+	ld d, a
+	ld hl, wMeowthJewel0YCoord
+	add hl, bc
+	ld a, [hl]
+	add d
+	ld hl, wMeowthJewel0YCoord
+	add hl, bc
+	ld [hl], a
+	ld hl, wd6f5
+	add hl, bc
+	inc [hl]
+	inc [hl]
+	ld a, [hl]
+	cp $46
+	jr nz, .asm_24af0
+	ld a, c
+	cp $9
+	jr c, .asm_24aed
+	call Func_2438f
+	ret
+
+.asm_24aed
+	call Func_24319
+.asm_24af0
+	ret
+
+Data_24af1:
+; These are offsets for something in the Meowth stage
+	db 2, -4
+	db 2, -4
+	db 2, -4
+	db 2,  0
+	db 2, -2
+	db 2,  0
+	db 2, -2
+	db 2,  0
+	db 2, -2
+	db 2,  0
+	db 2, -2
+	db 2,  0
+	db 2,  0
+	db 2,  0
+	db 2,  0
+	db 2,  2
+	db 2,  2
+	db 2,  2
+	db 2,  2
+	db 2,  2
+	db 2,  3
+	db 2,  4
+	db 2,  4
+	db 2,  4
+	db 2,  4
+	db 2,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 1,  4
+	db 0,  0
+	db 0,  0
+	db 0,  0
+	db 0,  0
+
+Func_24b41: ; 0x24b41
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	cp $14
+	jp nc, Func_24bf6
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld hl, Data_24c0a
+	ld e, a
+	ld d, $0
+	add hl, de
+	ld hl, wd72a
+	add hl, bc
+	ld a, [hl]
+	and a
+	jr nz, .asm_24b8a
+.asm_24b65
+	ld hl, wd72a
+	add hl, bc
+	ld [hl], $0
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld a, [hl]
+	push af
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld e, a
+	ld d, $0
+	ld hl, Data_24c0a
+	add hl, de
+	pop af
+	add [hl]
+	cp $90
+	jr nc, .asm_24b8a
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld [hl], a
+	jr .asm_24bb2
+
+.asm_24b8a
+	ld hl, wd72a
+	add hl, bc
+	ld [hl], $1
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld e, a
+	ld d, $0
+	ld hl, Data_24c0a
+	add hl, de
+	ld a, [hl]
+	ld d, a
+	ld a, $ff
+	sub d
+	inc a
+	ld d, a
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld a, [hl]
+	add d
+	cp $6
+	jr c, .asm_24b65
+	ld hl, wMeowthJewel0XCoord
+	add hl, bc
+	ld [hl], a
+.asm_24bb2
+	ld hl, wd6f5
+	add hl, bc
+	ld a, [hl]
+	ld e, a
+	ld d, $0
+	ld hl, Data_24c0a
+	add hl, de
+	inc hl
+	ld a, [hl]
+	ld d, a
+	ld hl, wMeowthJewel0YCoord
+	add hl, bc
+	ld a, [hl]
+	add d
+	ld hl, wMeowthJewel0YCoord
+	add hl, bc
+	ld [hl], a
+	ld hl, wd6f5
+	add hl, bc
+	inc [hl]
+	inc [hl]
+	ld a, [hl]
+	cp $12
+	jr nz, .asm_24bf4
+	ld a, c
+	cp $9
+	jr c, .asm_24be1
+	call Func_2438f
+	jr .asm_24be4
+
+.asm_24be1
+	call Func_24319
+.asm_24be4
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f8
+	add hl, bc
+	ld a, [hl]
+	and a
+	jr nz, .asm_24bf4
+	ld [hl], $1
+.asm_24bf4
+	scf
+	ret
+
+Func_24bf6: ; 0x24bf6
+	ld a, [wd6f4]
+	ld b, $0
+	ld c, a
+	ld hl, wd6f8
+	add hl, bc
+	ld [hl], $0
+	ld hl, wMeowthJewel0AnimationIndex
+	add hl, bc
+	ld [hl], $a
+	ccf
+	ret
+
+Data_24c0a:
+; These are offsets for something in the Meowth stage
+	db 2, -2
+	db 2, -1
+	db 2, -1
+	db 2,  0
+	db 2,  0
+	db 2,  0
+	db 2,  1
+	db 2,  1
+	db 2,  2
+	db 2,  4
+	db 1,  4
+	db 0,  0
+	db 0,  0
+	db 0,  0
+	db 0,  0
+
+Func_24c28: ; 0x24c28
+	ld a, [wd6f3]
+	and a
+	ret z
+	ld a, [wMeowthJewel3XCoord]
+	cp $c8
+	jr nz, .asm_24c76
+	ld a, [wMeowthXPosition]
+	add $8
+	ld [wMeowthJewel3XCoord], a
+	ld a, [wMeowthYPosition]
+	add $fb
+	ld [wMeowthJewel3YCoord], a
+	ld a, $1
+	ld [wMeowthJewel3State], a
+	ld hl, wNumActiveJewelsTop
+	inc [hl]
+	xor a
+	ld [wd6f3], a
+	ld [wMeowthJewel3AnimationIndex], a
+	ld [wd6ff], a
+	ld [wd702], a
+	ld [wd705], a
+	ld a, [wMeowthXPosition]
+	add $14
+	ld b, a
+	ld a, [wBallXPos + 1]
+	cp b
+	jr nc, .asm_24c70
+	ld a, $0
+	ld [wd734], a
+	jr .asm_24c75
+
+.asm_24c70
+	ld a, $1
+	ld [wd734], a
+.asm_24c75
+	ret
+
+.asm_24c76
+	ld a, [wMeowthJewel4XCoord]
+	cp $c8
+	jr nz, .asm_24cbf
+	ld a, [wMeowthXPosition]
+	add $8
+	ld [wMeowthJewel4XCoord], a
+	ld a, [wMeowthYPosition]
+	add $fb
+	ld [wMeowthJewel4YCoord], a
+	ld a, $1
+	ld [wMeowthJewel4State], a
+	ld hl, wNumActiveJewelsTop
+	inc [hl]
+	xor a
+	ld [wd6f3], a
+	ld [wMeowthJewel4AnimationIndex], a
+	ld [wd700], a
+	ld [wd703], a
+	ld [wd706], a
+	ld a, [wd6f7]
+	add $14
+	ld b, a
+	ld a, [wBallXPos + 1]
+	cp b
+	jr nc, .asm_24cb9
+	ld a, $0
+	ld [wd735], a
+	jr .asm_24cbe
+
+.asm_24cb9
+	ld a, $1
+	ld [wd735], a
+.asm_24cbe
+	ret
+
+.asm_24cbf
+	ld a, [wMeowthJewel5XCoord]
+	cp $c8
+	ret nz
+	ld a, [wMeowthXPosition]
+	add $8
+	ld [wMeowthJewel5XCoord], a
+	ld a, [wMeowthYPosition]
+	add $fb
+	ld [wMeowthJewel5YCoord], a
+	ld a, $1
+	ld [wMeowthJewel5State], a
+	ld hl, wNumActiveJewelsTop
+	inc [hl]
+	xor a
+	ld [wd6f3], a
+	ld [wMeowthJewel5AnimationIndex], a
+	ld [wd701], a
+	ld [wd704], a
+	ld [wd707], a
+	ld a, [wMeowthXPosition]
+	add $14
+	ld b, a
+	ld a, [wBallXPos + 1]
+	cp b
+	jr nc, .asm_24d01
+	ld a, $0
+	ld [wd736], a
+	jr .asm_24d06
+
+.asm_24d01
+	ld a, $1
+	ld [wd736], a
+.asm_24d06
+	ret
+
+Func_24d07: ; 0x24d07
+	ld a, [wMeowthJewel3State]
+	cp $1
+	jr nz, .asm_24d2a
+	ld a, [wMeowthJewel3AnimationIndex]
+	cp $a
+	jr z, .asm_24d1f
+	ld a, $a
+	ld [wd6f4], a
+	call Func_24a30
+	jr .asm_24d2a
+
+.asm_24d1f
+	ld a, $2
+	ld [wMeowthJewel3State], a
+	lb de, $00, $34
+	call PlaySoundEffect
+.asm_24d2a
+	ld a, [wMeowthJewel4State]
+	cp $1
+	jr nz, .asm_24d4d
+	ld a, [wMeowthJewel4AnimationIndex]
+	cp $a
+	jr z, .asm_24d42
+	ld a, $b
+	ld [wd6f4], a
+	call Func_24a30
+	jr .asm_24d4d
+
+.asm_24d42
+	ld a, $2
+	ld [wMeowthJewel4State], a
+	lb de, $00, $34
+	call PlaySoundEffect
+.asm_24d4d
+	ld a, [wMeowthJewel5State]
+	cp $1
+	jr nz, .asm_24d70
+	ld a, [wMeowthJewel5AnimationIndex]
+	cp $a
+	jr z, .asm_24d65
+	ld a, $c
+	ld [wd6f4], a
+	call Func_24a30
+	jr .asm_24d70
+
+.asm_24d65
+	ld a, $2
+	ld [wMeowthJewel5State], a
+	lb de, $00, $34
+	call PlaySoundEffect
+.asm_24d70
+	ld a, [wMeowthJewel3State]
+	cp $2
+	jr nz, .asm_24d7b
+	ld hl, wMeowthJewel3AnimationIndex
+	inc [hl]
+.asm_24d7b
+	ld a, [wMeowthJewel4State]
+	cp $2
+	jr nz, .asm_24d86
+	ld hl, wMeowthJewel4AnimationIndex
+	inc [hl]
+.asm_24d86
+	ld a, [wMeowthJewel5State]
+	cp $2
+	jr nz, .asm_24d91
+	ld hl, wMeowthJewel5AnimationIndex
+	inc [hl]
+.asm_24d91
+	ld a, [wMeowthJewel3State]
+	cp $3
+	jr nz, .asm_24db7
+	ld a, [wMeowthJewel3XCoord]
+	ld b, a
+	ld a, [wMeowthJewel3YCoord]
+	ld c, a
+	ld hl, wMeowthJewel3AnimationIndex
+	inc [hl]
+	ld a, [hl]
+	cp $2
+	jr nz, .asm_24dae
+	call Func_24e7f
+	jr .asm_24db7
+
+.asm_24dae
+	cp $a
+	jr nz, .asm_24db7
+	ld a, $4
+	ld [wMeowthJewel3State], a
+.asm_24db7
+	ld a, [wMeowthJewel4State]
+	cp $3
+	jr nz, .asm_24ddd
+	ld a, [wMeowthJewel4XCoord]
+	ld b, a
+	ld a, [wMeowthJewel4YCoord]
+	ld c, a
+	ld hl, wMeowthJewel4AnimationIndex
+	inc [hl]
+	ld a, [hl]
+	cp $2
+	jr nz, .asm_24dd4
+	call Func_24e7f
+	jr .asm_24ddd
+
+.asm_24dd4
+	cp $a
+	jr nz, .asm_24ddd
+	ld a, $4
+	ld [wMeowthJewel4State], a
+.asm_24ddd
+	ld a, [wMeowthJewel5State]
+	cp $3
+	jr nz, .asm_24e03
+	ld a, [wMeowthJewel5XCoord]
+	ld b, a
+	ld a, [wMeowthJewel5YCoord]
+	ld c, a
+	ld hl, wMeowthJewel5AnimationIndex
+	inc [hl]
+	ld a, [hl]
+	cp $2
+	jr nz, .asm_24dfa
+	call Func_24e7f
+	jr .asm_24e03
+
+.asm_24dfa
+	cp $a
+	jr nz, .asm_24e03
+	ld a, $4
+	ld [wMeowthJewel5State], a
+.asm_24e03
+	ld a, [wMeowthJewel3State]
+	cp $4
+	jr nz, .asm_24e1f
+	ld a, $c8
+	ld [wMeowthJewel3XCoord], a
+	ld [wMeowthJewel3YCoord], a
+	xor a
+	ld [wMeowthJewel3State], a
+	ld hl, wNumActiveJewelsTop
+	dec [hl]
+	ld a, [hl]
+	cp $2
+	jr z, .asm_24e55
+.asm_24e1f
+	ld a, [wMeowthJewel4State]
+	cp $4
+	jr nz, .asm_24e3b
+	ld a, $c8
+	ld [wMeowthJewel4XCoord], a
+	ld [wMeowthJewel4YCoord], a
+	xor a
+	ld [wMeowthJewel4State], a
+	ld hl, wNumActiveJewelsTop
+	dec [hl]
+	ld a, [hl]
+	cp $2
+	jr z, .asm_24e55
+.asm_24e3b
+	ld a, [wMeowthJewel5State]
+	cp $4
+	ret nz
+	ld a, $c8
+	ld [wMeowthJewel5XCoord], a
+	ld [wMeowthJewel5YCoord], a
+	xor a
+	ld [wMeowthJewel5State], a
+	ld hl, wNumActiveJewelsTop
+	dec [hl]
+	ld a, [hl]
+	cp $2
+	ret nz
+.asm_24e55
+	ld a, [wDisableMeowthJewelProduction]
+	and a
+	ret nz
+	ld a, [wMeowthXMovement]
+	cp $ff
+	jr z, .asm_24e70
+	ld hl, MeowthAnimationData2
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $1
+	ld [wMeowthState], a
+	ret
+
+.asm_24e70
+	ld hl, MeowthAnimationData1
+	ld de, wMeowthAnimation
+	call InitAnimation
+	ld a, $0
+	ld [wMeowthState], a
+	ret
+
+Func_24e7f: ; 0x24e7f
+	ld a, b
+	ld [wd79c], a
+	ld a, c
+	ld [wd79e], a
+	ld hl, wMeowthStageBonusCounter
+	inc [hl]
+	ld a, [hl]
+	cp $7  ; maximum bonus
+	jr nz, .asm_24e92
+	xor a
+	ld [hl], a
+.asm_24e92
+	ld a, $ff
+	ld [wRumblePattern], a
+	ld a, $3
+	ld [wRumbleDuration], a
+	lb de, $00, $32
+	call PlaySoundEffect
+	ld a, [wMeowthStageBonusCounter]
+	dec a
+.asm_24ea6
+	push af
+	ld bc, OneHundredThousandPoints
+	callba AddBigBCD6FromQueueWithBallMultiplier
+	ld hl, wMeowthStageScore
+	inc [hl]
+	pop af
+	and a
+	jr z, .asm_24ebf
+	dec a
+	jr .asm_24ea6
+
+.asm_24ebf
+	ld a, [wMeowthStageBonusCounter]
+	dec a
+	dec a
+	cp $fe
+	jr z, .asm_24ed7
+	cp $ff
+	jr z, .asm_24ed7
+	ld [wd79a], a
+	ld de, wd79a
+	call Func_24ee7
+	jr .asm_24ede
+
+.asm_24ed7
+	xor a
+	ld [wd79a], a
+	ld [wd795], a
+.asm_24ede
+	ld a, $1
+	ld [wd64e], a
+	call Func_24fa3
+	ret
+
+Func_24ee7: ; 0x24ee7
+	ld a, $ff
+	ld [wd795], a
+	ld a, [de]
+	sla a
+	ld c, a
+	ld b, $0
+	ld hl, MeowthMultiplierAnimations
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	dec de
+	dec de
+	dec de
+	call InitAnimation
+	ret
+
+Func_24f00: ; 0x24f00
+	ld a, [de]
+	sla a
+	ld c, a
+	ld b, $0
+	ld hl, MeowthMultiplierAnimations
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	push de
+	dec de
+	dec de
+	dec de
+	call UpdateAnimation
+	pop de
+	ld a, $1
+	ld [wd710], a
+	ret nc
+	dec de
+	ld a, [de]
+	cp $a
+	ret nz
+	xor a
+	ld [de], a
+	ld [wd79c], a
+	ld [wd79e], a
+	ld [wd795], a
+	xor a
+	ld [wd710], a
+	ret
+
+MeowthMultiplierAnimations: ; 0x24f30
+	dw MeowthMultiplier2Animation
+	dw MeowthMultiplier3Animation
+	dw MeowthMultiplier4Animation
+	dw MeowthMultiplier5Animation
+	dw MeowthMultiplier6Animation
+
+MeowthMultiplier2Animation: ; 0x24f3a
+; Each entry is [sprite id][duration]
+	db $02, MEOWTHMULTIPLIERSPRITE_2_FRAME_0
+	db $02, MEOWTHMULTIPLIERSPRITE_2_FRAME_1
+	db $02, MEOWTHMULTIPLIERSPRITE_2_FRAME_2
+	db $10, MEOWTHMULTIPLIERSPRITE_2_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_2_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_2_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_2_FRAME_0
+	db $00 ; terminator
+
+MeowthMultiplier3Animation: ; 0x24f4f
+; Each entry is [sprite id][duration]
+	db $02, MEOWTHMULTIPLIERSPRITE_3_FRAME_0
+	db $02, MEOWTHMULTIPLIERSPRITE_3_FRAME_1
+	db $02, MEOWTHMULTIPLIERSPRITE_3_FRAME_2
+	db $10, MEOWTHMULTIPLIERSPRITE_3_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_3_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_3_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_3_FRAME_0
+	db $00 ; terminator
+
+MeowthMultiplier4Animation: ; 0x24f64
+; Each entry is [sprite id][duration]
+	db $02, MEOWTHMULTIPLIERSPRITE_4_FRAME_0
+	db $02, MEOWTHMULTIPLIERSPRITE_4_FRAME_1
+	db $02, MEOWTHMULTIPLIERSPRITE_4_FRAME_2
+	db $10, MEOWTHMULTIPLIERSPRITE_4_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_4_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_4_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_4_FRAME_0
+	db $00 ; terminator
+
+MeowthMultiplier5Animation: ; 0x24f79
+; Each entry is [sprite id][duration]
+	db $02, MEOWTHMULTIPLIERSPRITE_5_FRAME_0
+	db $02, MEOWTHMULTIPLIERSPRITE_5_FRAME_1
+	db $02, MEOWTHMULTIPLIERSPRITE_5_FRAME_2
+	db $10, MEOWTHMULTIPLIERSPRITE_5_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_5_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_5_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_5_FRAME_0
+	db $00 ; terminator
+
+MeowthMultiplier6Animation: ; 0x24f8e
+; Each entry is [sprite id][duration]
+	db $02, MEOWTHMULTIPLIERSPRITE_6_FRAME_0
+	db $02, MEOWTHMULTIPLIERSPRITE_6_FRAME_1
+	db $02, MEOWTHMULTIPLIERSPRITE_6_FRAME_2
+	db $10, MEOWTHMULTIPLIERSPRITE_6_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_6_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_6_FRAME_0
+	db $04, MEOWTHMULTIPLIERSPRITE_INVISIBLE
+	db $04, MEOWTHMULTIPLIERSPRITE_6_FRAME_0
+	db $00 ; terminator
+
+Func_24fa3: ; 0x24fa3
+	ld a, [wMeowthStageScore]
+	ld c, a
+	ld b, $0
+.asm_24fa9
+	ld a, c
+	and a
+	jr z, .asm_24fb5
+	ld a, b
+	add $8
+	ld b, a
+	dec c
+	ld a, c
+	jr .asm_24fa9
+
+.asm_24fb5
+	ld a, b
+	and a
+	jr z, .asm_24fbb
+	sub $8
+.asm_24fbb
+	ld [wd652], a
+	ld a, [wMeowthStageBonusCounter]
+	and a
+	jr z, .asm_24fca
+	ld b, a
+	ld a, [wMeowthStageScore]
+	inc a
+	sub b
+.asm_24fca
+	ld [wd651], a
+	ld a, $0
+	ld [wd64e], a
+	ld a, [wMeowthStageScore]
+	and a
+	ret z
+	cp $15
+	jr c, .asm_24fe2
+	ld a, $14
+	ld [wMeowthStageScore], a
+	jr .asm_24fed
+
+.asm_24fe2
+	push af
+	xor a
+	ld [wd650], a
+	ld a, $1
+	ld [wd64e], a
+	pop af
+.asm_24fed
+	sla a
+	ld c, a
+	ld b, $0
+	ld hl, TileDataPointers_25007
+	ldh a, [hGameBoyColorFlag]
+	and a
+	jr z, .asm_24ffd
+	ld hl, TileDataPointers_25421
+.asm_24ffd
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	ld a, Bank(TileDataPointers_25007)
+	call QueueGraphicsToLoad
+	ret
+
+TileDataPointers_25007:
+	dw TileData_25031
+	dw TileData_25034
+	dw TileData_25037
+	dw TileData_2503a
+	dw TileData_2503d
+	dw TileData_25040
+	dw TileData_25043
+	dw TileData_25046
+	dw TileData_25049
+	dw TileData_2504c
+	dw TileData_2504f
+	dw TileData_25052
+	dw TileData_25055
+	dw TileData_25058
+	dw TileData_2505b
+	dw TileData_2505e
+	dw TileData_25061
+	dw TileData_25064
+	dw TileData_25067
+	dw TileData_2506a
+	dw TileData_2506d
+
+TileData_25031: ; 0x25031
+	db $01
+	dw TileData_25070
+
+TileData_25034: ; 0x25034
+	db $01
+	dw TileData_2509d
+
+TileData_25037: ; 0x25037
+	db $01
+	dw TileData_250ca
+
+TileData_2503a: ; 0x2503a
+	db $01
+	dw TileData_250f7
+
+TileData_2503d: ; 0x2503d
+	db $01
+	dw TileData_25124
+
+TileData_25040: ; 0x25040
+	db $01
+	dw TileData_25151
+
+TileData_25043: ; 0x25043
+	db $01
+	dw TileData_2517e
+
+TileData_25046: ; 0x25046
+	db $01
+	dw TileData_251ab
+
+TileData_25049: ; 0x25049
+	db $01
+	dw TileData_251d8
+
+TileData_2504c: ; 0x2504c
+	db $01
+	dw TileData_25205
+
+TileData_2504f: ; 0x2504f
+	db $01
+	dw TileData_25232
+
+TileData_25052: ; 0x25052
+	db $01
+	dw TileData_2525f
+
+TileData_25055: ; 0x25055
+	db $01
+	dw TileData_2528c
+
+TileData_25058: ; 0x25058
+	db $01
+	dw TileData_252b9
+
+TileData_2505b: ; 0x2505b
+	db $01
+	dw TileData_252e6
+
+TileData_2505e: ; 0x2505e
+	db $01
+	dw TileData_25313
+
+TileData_25061: ; 0x25061
+	db $01
+	dw TileData_25340
+
+TileData_25064: ; 0x25064
+	db $01
+	dw TileData_2536d
+
+TileData_25067: ; 0x25067
+	db $01
+	dw TileData_2539a
+
+TileData_2506a: ; 0x2506a
+	db $01
+	dw TileData_253c7
+
+TileData_2506d: ; 0x2506d
+	db $01
+	dw TileData_253f4
+
+TileData_25070: ; 0x25070
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $E4, $0C, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_2509d: ; 0x2509d
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $0C, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_250ca: ; 0x250ca
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_250f7: ; 0x250f7
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_25124: ; 0x25124
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_25151: ; 0x25151
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_2517e: ; 0x2517e
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_251ab: ; 0x251ab
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_251d8: ; 0x251d8
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_25205: ; 0x25205
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $0E, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_25232: ; 0x25232
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $0D, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_2525f: ; 0x2525f
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $0E
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_2528c: ; 0x2528c
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $0D, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_252b9: ; 0x252b9
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $0E, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_252e6: ; 0x252e6
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $0D
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_25313: ; 0x25313
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $0E, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_25340: ; 0x25340
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $16, $0D, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_2536d: ; 0x2536d
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $16, $16, $0E
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_2539a: ; 0x2539a
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $16, $16, $16
+
+	db $02
+	dw vBGMap + $12
+	db $0F, $E4
+
+	db $00 ; terminator
+
+TileData_253c7: ; 0x253c7
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $16, $16, $16
+
+	db $02
+	dw vBGMap + $12
+	db $17, $E4
+
+	db $00 ; terminator
+
+TileData_253f4: ; 0x253f4
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $14, $15, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $16, $16, $16
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $16, $16, $16
+
+	db $02
+	dw vBGMap + $12
+	db $17, $18
+
+	db $00 ; terminator
+
+TileDataPointers_25421: ; 0x25421
+	dw TileData_2544b
+	dw TileData_2544e
+	dw TileData_25451
+	dw TileData_25454
+	dw TileData_25457
+	dw TileData_2545a
+	dw TileData_2545d
+	dw TileData_25460
+	dw TileData_25463
+	dw TileData_25466
+	dw TileData_25469
+	dw TileData_2546c
+	dw TileData_2546f
+	dw TileData_25472
+	dw TileData_25475
+	dw TileData_25478
+	dw TileData_2547b
+	dw TileData_2547e
+	dw TileData_25481
+	dw TileData_25484
+	dw TileData_25487
+
+TileData_2544b: ; 0x2544b
+	db $01
+	dw TileData_2548a
+
+TileData_2544e: ; 0x2544e
+	db $01
+	dw TileData_254b7
+
+TileData_25451: ; 0x25451
+	db $01
+	dw TileData_254e4
+
+TileData_25454: ; 0x25454
+	db $01
+	dw TileData_25511
+
+TileData_25457: ; 0x25457
+	db $01
+	dw TileData_2553e
+
+TileData_2545a: ; 0x2545a
+	db $01
+	dw TileData_2556b
+
+TileData_2545d: ; 0x2545d
+	db $01
+	dw TileData_25598
+
+TileData_25460: ; 0x25460
+	db $01
+	dw TileData_255c5
+
+TileData_25463: ; 0x25463
+	db $01
+	dw TileData_255f2
+
+TileData_25466: ; 0x25466
+	db $01
+	dw TileData_2561f
+
+TileData_25469: ; 0x25469
+	db $01
+	dw TileData_2564c
+
+TileData_2546c: ; 0x2546c
+	db $01
+	dw TileData_25679
+
+TileData_2546f: ; 0x2546f
+	db $01
+	dw TileData_256a6
+
+TileData_25472: ; 0x25472
+	db $01
+	dw TileData_256d3
+
+TileData_25475: ; 0x25475
+	db $01
+	dw TileData_25700
+
+TileData_25478: ; 0x25478
+	db $01
+	dw TileData_2572d
+
+TileData_2547b: ; 0x2547b
+	db $01
+	dw TileData_2575a
+
+TileData_2547e: ; 0x2547e
+	db $01
+	dw TileData_25787
+
+TileData_25481: ; 0x25481
+	db $01
+	dw TileData_257b4
+
+TileData_25484: ; 0x25484
+	db $01
+	dw TileData_257e1
+
+TileData_25487: ; 0x25487
+	db $01
+	dw TileData_2580e
+
+TileData_2548a: ; 0x2548a
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $E3, $FD, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_254b7: ; 0x254b7
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $FD, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_254e4: ; 0x254e4
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_25511: ; 0x25511
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_2553e: ; 0x2553e
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_2556b: ; 0x2556b
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_25598: ; 0x25598
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_255c5: ; 0x255c5
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_255f2: ; 0x255f2
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_2561f: ; 0x2561f
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_2564c: ; 0x2564c
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_25679: ; 0x25679
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_256a6: ; 0x256a6
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $FE, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_256d3: ; 0x256d3
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $FE, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_25700: ; 0x25700
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $FE
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_2572d: ; 0x2572d
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $FE, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_2575a: ; 0x2575a
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $00, $FE, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_25787: ; 0x25787
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $00, $00, $FE
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_257b4: ; 0x257b4
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $00, $00, $00
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $FD, $E3
+
+	db $00 ; terminator
+
+TileData_257e1: ; 0x257e1
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $00, $00, $00
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $02, $E3
+
+	db $00 ; terminator
+
+TileData_2580e: ; 0x2580e
+	dw LoadTileLists
+	db $14 ; total number of tiles
+
+	db $03 ; number of tiles
+	dw vBGMap
+	db $FF, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $3
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $6
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $9
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $C
+	db $00, $00, $00
+
+	db $03 ; number of tiles
+	dw vBGMap + $F
+	db $00, $00, $00
+
+	db $02 ; number of tiles
+	dw vBGMap + $12
+	db $02, $03
+
+	db $00 ; terminator
