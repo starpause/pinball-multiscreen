@@ -23,9 +23,11 @@ def main(outdir):
     lua = os.path.join(work, "test.lua")
     with open(lua, "w", encoding="utf-8", newline="\n") as f:
         f.write(open(os.path.join(ROOT, "fairy_ring.lua"), encoding="utf-8").read())
+        if os.environ.get("TEST_PRELUDE"):  # e.g. TEST_PRELUDE='TUNE.kick="reset"'
+            f.write("\n" + os.environ["TEST_PRELUDE"] + "\n")
         if os.environ.get("FLIP_SWEEP"):
             f.write("\nFLIP_SWEEP = {" + os.environ["FLIP_SWEEP"] + "}\n")
-        f.write(open(os.path.join(HERE, "autotest.lua"), encoding="utf-8").read())
+        f.write(open(os.path.join(HERE, os.environ.get("AUTOTEST", "autotest.lua")), encoding="utf-8").read())
     build_tic.main(lua, os.path.join(ROOT, "fairy_ring_sprites.png"), os.path.join(work, "test.tic"))
     r = subprocess.run([TIC, "--cli", "--skip", "--fs=" + work, "--cmd=load test.tic & run"],
                        capture_output=True, text=True, timeout=300)

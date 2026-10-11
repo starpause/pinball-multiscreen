@@ -87,6 +87,17 @@ The bot test counts **traps**: the ball stays inside a 16-px box for 4 s while n
 
 `python tests/run_tests.py <outdir>` runs a simple bot that flips whenever the ball falls into a flipper's reach. It plays each of tables 0–19 six times and reports how many launches **climbed**, **drained** or **stayed** for 60 s. Set `FLIP_SWEEP=0.4,0.6,...` to compare flipper power.
 
-Current results (flip power 0.6, pocket rule on): 49 climbs, 15 drains, 56 stays and **0 traps** out of 120. Every table except table 2 was climbed at least once. Next tuning ideas:
+**Kicker rule:** bumpers and slingshots use Pokémon's **additive** rule: a 1/4 bounce, then a +2.0 px/frame push along the normal, with slingshots tilted 11.25° upward. Infinity's **reset** rule (zero the velocity, then a fixed kick) is kept as `TUNE.kick = "reset"`. Compare them with `TEST_PRELUDE='TUNE.kick="reset"' python tests/run_tests.py out`.
+
+| Bot, 120 launches | reset (Infinity) | add (Pokémon) |
+|---|---|---|
+| climbed | 49 | 87 |
+| drained | 15 | 27 |
+| still bouncing after 60 s | 56 | 6 |
+| traps | 0 | 0 |
+
+With the additive rule the ball keeps its momentum through the table, so long stalemates almost vanish and every table gets climbed regularly.
+
+Earlier results with the reset rule (flip power 0.6, pocket rule on): 49 climbs, 15 drains, 56 stays and **0 traps** out of 120. Every table except table 2 was climbed at least once. Next tuning ideas:
 - cap total toys **including** goal objects;
 - **re-roll** tables the bot can never climb or that trap the ball, a validation step Infinity doesn't have.

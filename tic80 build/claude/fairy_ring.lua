@@ -15,7 +15,9 @@
 --    a bonus "fairy court" every 10th table that becomes your checkpoint.
 --  * Physics is the Pokemon Pinball engine: per-pixel collision map,
 --    16-point ring probe, rotate-into-normal bounce, swept 16-state
---    flippers. Kickers use Infinity's rule: reset velocity, fixed kick.
+--    flippers. Bumpers and slingshots use Pokemon's ADDITIVE rule: a 1/4
+--    bounce, then a fixed push along the normal (the old Infinity "reset
+--    velocity, fixed kick" rule is still available as TUNE.kick = "reset").
 
 -- ============================ constants ============================
 local GRAV    = 0.06     -- px/frame^2 (Infinity: 34.3 u/s^2 at 6.8 px/u)
@@ -28,11 +30,15 @@ local SNAP    = 0x8000   -- map RAM: baked background of the current table
 local SCRBYTES = 16320
 
 -- tuned feel (px/frame)
-local KICK_BUMPER = 2.2  -- Infinity bumper 18.75 u/s
-local KICK_SLING  = 1.6
+-- kicker strengths per rule: "add" = Pokemon (bounce 1/4 + push),
+-- "reset" = Infinity (zero the velocity, then push)
+local KICKS = {
+  add   = {bumper = 2.0, sling = 2.0},  -- Pokemon: +$0200 along the normal
+  reset = {bumper = 2.2, sling = 1.6},  -- Infinity: 18.75 / 12.5 u/s
+}
 local KICK_POST   = 1.2
 -- scales Pokemon's flipper lever impulse; global so tests can sweep it
-TUNE = {flip = 0.6}
+TUNE = {flip = 0.6, kick = "add"}
 local LAUNCH_VY   = -2.9
 
 -- FAIRY NIGHT palette indices (the palette ships in the sprite sheet)
@@ -155,11 +161,18 @@ local PIECES = {
 -- anchor slots for kickback / side post / centre post.
 local KIT = {
   wall  = {69,89, 69,106, 41,130, 41,140, 80,140, 80,89},
-  guide = {57,88, 57,100, 32,114},          -- capsule chain, r = 2
-  sling = {43,74, 43,92, 33,97},            -- triangle; face = pt1 -> pt3
+  -- the guide's lower leg is flush with the RESTING flipper's top surface
+  -- (26.5 deg, tangent to the hub) offset by its own radius, and it runs
+  -- into the hub: no notch beside the pivot for the ball to sit in
+  guide = {57,88, 57,98.4, 21,116.4},       -- capsule chain, r = 2
+                                            -- (ends 4 px past the pivot, so a
+                                            -- cradled ball rests on the flipper
+                                            -- body, not balanced on the hub)
+  sling = {43,72, 43,90, 33,94},            -- triangle; face = pt1 -> pt3
                                             -- (inlane under it stays 14+ px wide)
   pivot = {dx = 25, y = 118},
-  kick  = {dx = 36, y = 126},               -- outlane kickback sensor
+  kick  = {dx = 64, y = 102},               -- kickback: in the straight part
+                                            -- of the outlane, fires straight up
   post  = {dx = 64, y = 86},                -- outlane side post (blocker)
 }
 local CENTER_POST = {x = CX, y = 131}
@@ -253,9 +266,16 @@ local function spot_ok(t, x, y, def, extra)
       if not cmap_clear(x + dx, y, def.r + BR + 2) then return false end
     end
   end
+  local ring = def == TOY.hole or def == TOY.warp
+  if ring then
+    local rings = 0
+    for _, o in ipairs(t.objs) do if o.kind == "hole" or o.kind == "warp" then rings = rings + 1 end end
+    if rings >= 2 then return false end -- Infinity: max 2 hold holes per table
+  end
   for _, o in ipairs(t.objs) do
     local od = TOY[o.kind]
     local need = math.max(def.m, od.m) + (extra or 0)
+    if ring and (o.kind == "hole" or o.kind == "warp") then need = math.max(need, 36) end
     if def.r > 0 and od.r > 0 and not (def.kicker and od.kicker) then
       need = math.max(need, def.r + od.r + GAP)
     end
@@ -445,7 +465,9 @@ for s = 0, 15 do
     local a0, a1 = RANG[s], RANG[e]
     if a1 < a0 then a1 = a1 + 2*math.pi end
     local mid, half = (a0 + a1) / 2, (a1 - a0) / 2
-    RUN[s*16+e] = {-math.cos(mid), -math.sin(mid), 1 + 4*(1 - math.cos(half))}
+    -- Pokemon uses 1 + ...: a 1 px minimum push suits its 16 px ball but
+    -- makes our 8 px ball visibly bob when resting, so the minimum is 0.4
+    RUN[s*16+e] = {-math.cos(mid), -math.sin(mid), 0.4 + 4*(1 - math.cos(half))}
   end
 end
 
@@ -479,6 +501,100 @@ local function ring_test(bx, by)
   return true, r[1], r[2], r[3], hits[bs]
 end
 
+-- ============================ wall distance field ============================
+-- Pokemon's 16-point ring samples whole pixels, so on an 8 px ball the
+-- contact normal jumps in 22.5 deg steps as the ball drifts sub-pixel:
+-- a resting ball jiggles. Walls therefore use a signed distance field,
+-- built once per table (8SSEDT), sampled bilinearly: smooth normals and
+-- exact penetration depth. (The ring stays for tests/diagnostics.)
+local SD, NATTR = {}, {}
+
+local function edt(src) -- nearest source pixel for every pixel
+  local nx, ny = {}, {}
+  for y = 0, WH - 1 do
+    for x = 0, WW - 1 do
+      local i = y * WW + x
+      if src(cmap[i]) then nx[i], ny[i] = x, y else nx[i], ny[i] = -9999, -9999 end
+    end
+  end
+  local function try(i, x, y, j)
+    local cx, cy = nx[j], ny[j]
+    local d = (cx - x)^2 + (cy - y)^2
+    if d < (nx[i] - x)^2 + (ny[i] - y)^2 then nx[i], ny[i] = cx, cy end
+  end
+  for y = 0, WH - 1 do
+    for x = 0, WW - 1 do
+      local i = y * WW + x
+      if x > 0 then try(i, x, y, i - 1) end
+      if y > 0 then
+        try(i, x, y, i - WW)
+        if x > 0 then try(i, x, y, i - WW - 1) end
+        if x < WW - 1 then try(i, x, y, i - WW + 1) end
+      end
+    end
+    for x = WW - 2, 0, -1 do local i = y * WW + x try(i, x, y, i + 1) end
+  end
+  for y = WH - 1, 0, -1 do
+    for x = WW - 1, 0, -1 do
+      local i = y * WW + x
+      if x < WW - 1 then try(i, x, y, i + 1) end
+      if y < WH - 1 then
+        try(i, x, y, i + WW)
+        if x < WW - 1 then try(i, x, y, i + WW + 1) end
+        if x > 0 then try(i, x, y, i + WW - 1) end
+      end
+    end
+    for x = 1, WW - 1 do local i = y * WW + x try(i, x, y, i - 1) end
+  end
+  return nx, ny
+end
+
+local function build_sdf()
+  local sx, sy = edt(function(a) return a ~= EMPTY end)
+  local ex, ey = edt(function(a) return a == EMPTY end)
+  for y = 0, WH - 1 do
+    for x = 0, WW - 1 do
+      local i = y * WW + x
+      if cmap[i] == EMPTY then
+        SD[i] = math.sqrt((sx[i] - x)^2 + (sy[i] - y)^2) - 0.5
+        local ax, ay = sx[i], sy[i]
+        NATTR[i] = (ax >= 0) and cmap[ay * WW + ax] or WALL
+      else
+        SD[i] = -(math.sqrt((ex[i] - x)^2 + (ey[i] - y)^2) - 0.5)
+        NATTR[i] = cmap[i]
+      end
+    end
+  end
+end
+
+local function sd_at(x, y) -- bilinear, pixel centres at i + 0.5
+  local px, py = x - 0.5, y - 0.5
+  local ix, iy = px // 1, py // 1
+  local fx, fy = px - ix, py - iy
+  local function g(cx, cy)
+    if cx < 0 or cx >= WW then return -3 end -- solid beyond the sides
+    if cy < 0 then cy = 0 elseif cy >= WH then cy = WH - 1 end
+    return SD[cy * WW + cx]
+  end
+  local a, b = g(ix, iy), g(ix + 1, iy)
+  local c, d = g(ix, iy + 1), g(ix + 1, iy + 1)
+  return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
+end
+
+-- returns hit, nx, ny, push, attr  (same shape as ring_test)
+local function sdf_test(bx, by)
+  if by < -BR or by > WH + BR then return false end
+  local d = sd_at(bx, by)
+  if d >= BR then return false end
+  local gx = sd_at(bx + 0.5, by) - sd_at(bx - 0.5, by)
+  local gy = sd_at(bx, by + 0.5) - sd_at(bx, by - 0.5)
+  local l = math.sqrt(gx * gx + gy * gy)
+  if l < 1e-6 then return false end
+  local ix = math.max(0, math.min(WW - 1, bx // 1))
+  local iy = math.max(0, math.min(WH - 1, by // 1))
+  return true, gx / l, gy / l, BR - d, NATTR[iy * WW + ix]
+end
+
 -- ============================ flippers ============================
 -- 16 states, 3.2 states/frame (0x333), 26.5 deg down -> ~31 deg up
 local FL_LEN, FL_RH, FL_RT = 19, 5, 3 -- = the sprite shape
@@ -508,9 +624,15 @@ local function flipper_state_hit(dx, dy, s)
     local dt = math.sqrt(tx*tx + ty*ty)
     if dt < FL_RT + BR and dt > 0.01 then return tx/dt, ty/dt, FL_RT + BR - dt, d end
   else
+    -- a true solid: a ball above the flipper's centre line is pushed up,
+    -- one below it is pushed DOWN. (Pokemon treats 14 px under the top
+    -- surface as "inside" and pushes up, which scooped draining balls
+    -- back up through the flipper; the swept state test already stops
+    -- fast flips from passing through the ball.)
     local lim = FL_RH + (FL_RT - FL_RH) * t / FL_LEN + BR
     local h = dx*nux + dy*nuy
-    if h < lim and h > -(lim + 6) then return nux, nuy, lim - h, d end
+    if h >= 0 and h < lim then return nux, nuy, lim - h, d end
+    if h < 0 and h > -lim then return -nux, -nuy, lim + h, d end
   end
 end
 
@@ -571,6 +693,7 @@ end
 local function enter_table(idx)
   cur = get_table(idx)
   paint_table(cur)
+  build_sdf()
   cur.visited = true
   for i = #parts, 1, -1 do parts[i] = nil end
   best = math.max(best, idx)
@@ -695,8 +818,13 @@ local function sensors()
       o.inside = inside
     elseif (o.kind == "hole" or o.kind == "warp") then
       local d = math.sqrt((ball.x - o.x)^2 + (ball.y - o.y)^2)
-      if d < o.r and not o.inside then
+      if d < o.r and not o.inside and (cur.holeCool or 0) <= 0 then
         o.inside = true
+        ball.caps = (ball.caps or 0) + 1
+        -- a capture with no flipper touch since the last one = the table
+        -- is playing itself (tests count these as LOOPS)
+        if ball.flipSince == false then ball.selfCaps = (ball.selfCaps or 0) + 1 end
+        ball.flipSince = false
         add(o.court and 25000 or 2500)
         say(o.kind == "warp" and (o.court and "FAIRY COURT!" or "WARP UP!") or "FAIRY RING")
         sparkle(o.x, o.y, 10)
@@ -713,7 +841,7 @@ local function sensors()
       add(500)
       say("KICKBACK!")
       ball.x, ball.y = kx, ky
-      ball.vx, ball.vy = 2.6 * side, -2.4  -- back up the outlane
+      ball.vx, ball.vy = 0, -3.6  -- straight up and out of the outlane
       shake = 4
     end
   end
@@ -725,7 +853,13 @@ end
 -- ============================ physics frame ============================
 local function physics()
   lflip, rflip = leftHeld(), rightHeld()
-  for _, f in ipairs(cur.flippers) do flipper_update(f, f.dir == 1 and lflip or rflip) end
+  for _, f in ipairs(cur.flippers) do
+    -- (not `f.dir == 1 and lflip or rflip`: when lflip is false that
+    -- expression falls through to rflip, so B/A moved both flippers)
+    local held = rflip
+    if f.dir == 1 then held = lflip end
+    flipper_update(f, held)
+  end
   for _, o in ipairs(cur.objs) do
     o.cool, o.flash = o.cool - 1, o.flash - 1
     if o.kind == "lantern" then
@@ -746,7 +880,7 @@ local function physics()
   if ball.noflip and ball.vy > 0 then ball.noflip = false end
 
   -- 2. walls (ring probe)
-  local hit, nx, ny, push, attr, buried = ring_test(ball.x, ball.y)
+  local hit, nx, ny, push, attr, buried = sdf_test(ball.x, ball.y)
   local kind = attr
   if buried then
     ball.x, ball.y = ball.px, ball.py
@@ -756,7 +890,9 @@ local function physics()
     ball.x, ball.y = ball.x + nx*push, ball.y + ny*push
   end
 
-  -- 3. toys, then flippers (flippers win)
+  -- 3. toys, then flippers (flippers win); keep the wall normal so the
+  -- ball can't keep sinking into the wall while resting on a flipper
+  local wallHit, wnx, wny = hit, nx, ny
   local o, onx, ony = toy_collide()
   if o then hit, nx, ny, kind = true, onx, ony, o end
   local kick, amp, reset = 0, 0, false
@@ -765,6 +901,7 @@ local function physics()
       local fh, fnx, fny, fpush, force = flipper_collide(f)
       if fh then
         hit, nx, ny, kind = true, fnx, fny, "flipper"
+        ball.flipSince = true
         ball.x, ball.y = ball.x + fnx*fpush, ball.y + fny*fpush
         kick, amp = force, 1
         break
@@ -779,7 +916,7 @@ local function physics()
       if (cur.slingCool or 0) <= 0 then
         cur.slingCool = 8
         nx, ny = rotate(nx, ny, side < 0 and -11.25 or 11.25)
-        kick, reset = KICK_SLING, true
+        kick, reset = KICKS[TUNE.kick].sling, TUNE.kick == "reset"
         add(10)
       end
     elseif type(kind) == "table" then
@@ -787,7 +924,7 @@ local function physics()
       if k == "bumper" or k == "gold" or k == "lantern" then
         if kind.cool <= 0 then
           kind.cool, kind.flash = 6, 8
-          kick, reset = KICK_BUMPER, true
+          kick, reset = KICKS[TUNE.kick].bumper, TUNE.kick == "reset"
           add(k == "gold" and 500 or 100)
           sparkle(ball.x - nx * BR, ball.y - ny * BR, 2)
         end
@@ -809,7 +946,12 @@ local function physics()
   end
   touching, lastNx, lastNy = hit, nx, ny
 
-  -- 5. response: Infinity-style reset kick, or Pokemon rotate-bounce
+  -- 5. response: Pokemon rotate-bounce (+ additive kick), or Infinity reset
+  if hit and wallHit and kind ~= attr then
+    -- second contact (wall under a flipper/toy): just stop sinking into it
+    local vn = ball.vx*wnx + ball.vy*wny
+    if vn < 0 then ball.vx, ball.vy = ball.vx - vn*wnx, ball.vy - vn*wny end
+  end
   if hit then
     if reset then
       ball.vx, ball.vy = nx * kick, ny * kick
@@ -817,7 +959,9 @@ local function physics()
       local tx, ty = -ny, nx
       local vn = ball.vx*nx + ball.vy*ny
       local vt = ball.vx*tx + ball.vy*ty
-      if vn < 0 then vn = -vn * (0.25 + 0.125*amp) end
+      -- resting contact: no micro-bounce (gravity alone pushes in ~0.06/f)
+      if vn < 0 and vn > -0.25 and kick == 0 then vn = 0
+      elseif vn < 0 then vn = -vn * (0.25 + 0.125*amp) end
       vn = vn + kick
       ball.vx, ball.vy = vt*tx + vn*nx, vt*ty + vn*ny
       ball.spin = math.max(-127, math.min(127, (vt * 4) // 1))
@@ -884,6 +1028,7 @@ local function update()
     return
   end
   if cur.posts > 0 then cur.posts = cur.posts - 1 end
+  if (cur.holeCool or 0) > 0 then cur.holeCool = cur.holeCool - 1 end
   if cur.center > 0 and not cur.bonus then cur.center = cur.center - 1 end
   if cur.updraft > 0 then cur.updraft = cur.updraft - 1 end
   if saver > 0 and state == "play" then saver = saver - 1 end
@@ -909,7 +1054,10 @@ local function update()
         say(cur.bonus and "FAIRY COURT" or ("TABLE " .. nxt))
       else
         local side = o.x < CX and 1 or -1
-        ball.vx, ball.vy = 0.9 * side, 1.4 -- eject down toward the flippers
+        ball.vx, ball.vy = 1.6 * side, 1.6 -- eject down toward the flippers
+        -- every ring ignores the ball for 1.5 s, so one ring can't feed
+        -- another forever (a loop found in playtesting)
+        cur.holeCool = 90
       end
     end
   elseif state == "play" then
@@ -1094,7 +1242,7 @@ local function draw_world()
   -- kit: kickback arrows, posts, updraft
   for i, side in ipairs({-1, 1}) do
     local lit = cur.kick[i] and (frame // 10) % 2 == 0
-    spr(lit and 13 or 12, side_x(KIT.kick.dx, side) - 4, KIT.kick.y - 6, 0)
+    spr(lit and 13 or 12, side_x(KIT.kick.dx, side) - 4, KIT.kick.y + 6, 0)
   end
   for _, p in ipairs(post_list()) do
     local blink = (cur.posts < 120 and cur.posts > 0 and p.y < 100) or
@@ -1114,7 +1262,10 @@ local function draw_world()
   end
   for _, f in ipairs(cur.flippers) do draw_flipper(f) end
 
-  local bx, by = ball.x // 1 + sx, ball.y // 1
+  local slow = math.abs(ball.vx) + math.abs(ball.vy) < 0.6
+  if not ball.dx or not slow then ball.dx, ball.dy = ball.x, ball.y
+  else ball.dx, ball.dy = ball.dx + (ball.x - ball.dx) * 0.25, ball.dy + (ball.y - ball.dy) * 0.25 end
+  local bx, by = (ball.dx + 0.5) // 1 + sx, (ball.dy + 0.5) // 1
   if state ~= "lost" and not (state == "hold" and holdT % 6 < 3) then
     spr((ball.rot // 64) % 4, bx - 4, by - 4, 0)
   end
@@ -1211,7 +1362,7 @@ FR = {
   tables = function() return tables end,
   generate = generate, paint = paint_table, enter = enter_table,
   new_game = new_game, physics = physics, update = update,
-  transitions = transitions, ring_test = ring_test,
+  transitions = transitions, ring_test = ring_test, sdf_test = sdf_test,
   force_state = function(s) state = s end,
   floor = function() return floorIdx end,
   tic_draw = function() update_fairy() draw_world() draw_hud() end,

@@ -28,6 +28,7 @@ local function shot(name)
   end
 end
 
+BURY_DEPTH = 6 -- ball centre more than 2 px inside a wall
 local function speed(b) return math.sqrt(b.vx * b.vx + b.vy * b.vy) end
 local function idx() return select(4, FR.get()) end
 
@@ -75,6 +76,75 @@ function BOOT()
   trace("  kinds: " .. table.concat(ks, " "))
   trace("  pieces: " .. table.concat(ps, " "))
 
+  -- 1b. controls: each side's buttons move ONLY that side's flippers
+  local function flipper_states(padt)
+    FR.new_game(1) FR.force_state("play")
+    b.x, b.y, b.vx, b.vy = 75, 40, 0, 0
+    step(6, padt)
+    local l, r = 0, 0
+    for _, f in ipairs(FR.cur().flippers) do
+      if f.dir == 1 then l = math.max(l, f.s) else r = math.max(r, f.s) end
+    end
+    return l, r
+  end
+  local ok = true
+  for _, c in ipairs({{"dpad", {[0] = true}, "L"}, {"left", {[2] = true}, "L"},
+      {"A", {[4] = true}, "R"}, {"B", {[5] = true}, "R"}}) do
+    local l, r = flipper_states(c[2])
+    local good = (c[3] == "L" and l > 10 and r == 0) or (c[3] == "R" and r > 10 and l == 0)
+    if not good then ok = false trace(string.format("  CONTROL FAIL %s: left=%d right=%d", c[1], l, r)) end
+  end
+  trace("controls: " .. (ok and "ok (d-pad = left only, A/B = right only)" or "FAILED"))
+
+  -- 1c. the three things from the playtest video
+  -- (a) kickback must put the ball back on the playfield
+  for _, side in ipairs({-1, 1}) do
+    FR.new_game(1) FR.force_state("play")
+    local t = FR.cur()
+    t.kick[1], t.kick[2] = true, true
+    b.x, b.y, b.vx, b.vy, b.noflip = 75 + side * 64, 92, 0, 1.0, false
+    local peak = 999
+    for i = 1, 120 do step(1, {}) peak = math.min(peak, b.y) end
+    trace(string.format("kickback %s: peak y=%.0f (outlane top is y 86) %s", side < 0 and "L" or "R",
+      peak, peak < 80 and "ok" or "TOO LOW"))
+  end
+  -- (b) cradle jiggle: drop onto a held flipper, measure bobbing once settled
+  for _, side in ipairs({-1, 1}) do
+    FR.new_game(1) FR.force_state("play")
+    b.x, b.y, b.vx, b.vy, b.noflip = 75 + side * 15, 80, 0, 0, false
+    local padt = side < 0 and {[2] = true} or {[4] = true}
+    step(180, padt)
+    local y0, y1, x0, x1 = 999, -999, 999, -999
+    for i = 1, 120 do
+      step(1, padt)
+      y0, y1 = math.min(y0, b.y), math.max(y1, b.y)
+      x0, x1 = math.min(x0, b.x), math.max(x1, b.x)
+    end
+    -- (c) release: how many frames until the ball rolls 10 px away?
+    local sx, sy, rolled = b.x, b.y, nil
+    for i = 1, 120 do
+      step(1, {})
+      if not rolled and ((b.x - sx)^2 + (b.y - sy)^2) > 100 then rolled = i end
+    end
+    local f = FR.cur().flippers[side < 0 and 1 or 2]
+    local along = ((sx - f.px) * f.dir) -- px from the pivot toward the tip
+    trace(string.format("cradle %s at (%.1f,%.1f), %.1f px along flipper: jiggle x %.2f y %.2f px; on release rolls 10px in %s frames",
+      side < 0 and "L" or "R", sx, sy, along, x1 - x0, y1 - y0, tostring(rolled or "NEVER")))
+  end
+
+  -- 1d. a ball draining UNDER a flipper must not be scooped back up by a flip
+  for _, side in ipairs({-1, 1}) do
+    FR.new_game(1) FR.force_state("play")
+    local f = FR.cur().flippers[side < 0 and 1 or 2]
+    -- 8 px along the resting flipper, 9 px below its centre line, falling
+    b.x, b.y, b.vx, b.vy, b.noflip = f.px - side * 8, f.py + 3.6 + 9, 0, 0.8, false
+    local padt = side < 0 and {[2] = true} or {[4] = true}
+    local minY = 999
+    for i = 1, 30 do step(1, padt) minY = math.min(minY, b.y) end
+    trace(string.format("under-flipper %s: start y %.0f, min y %.0f -> %s", side < 0 and "L" or "R",
+      f.py + 12.6, minY, minY > f.py and "stays down (ok)" or "SCOOPED UP"))
+  end
+
   -- 2. launch on table 0
   FR.new_game(1)
   step(1, {[2] = true})
@@ -113,9 +183,9 @@ function BOOT()
   for _, fp in ipairs(FLIP_SWEEP or {TUNE.flip}) do
   TUNE.flip = fp
   local lines = {}
-  local totalUp, totalDown, totalTO, totalTraps = 0, 0, 0, 0
-  for ti = 0, 19 do
-    local up, down, timeout, frames, traps, trapAt = 0, 0, 0, 0, 0, {}
+  local totalUp, totalDown, totalTO, totalTraps, totalLoops = 0, 0, 0, 0, 0
+  for ti = 0, (BOT_TABLES or 19) do
+    local up, down, timeout, frames, traps, trapAt, loops = 0, 0, 0, 0, 0, {}, 0
     local info
     for trial = 1, 6 do
       FR.new_game(7)
@@ -125,6 +195,7 @@ function BOOT()
         #t0.objs, #t0.events, #t0.flippers)
       FR.force_state("play")
       b.x, b.y, b.vx, b.vy, b.noflip = 75 + (trial - 3.5) * 6, 128, (trial % 3 - 1) * 0.3, -2.9, true
+      b.caps, b.traps, b.selfCaps, b.flipSince = 0, 0, 0, nil
       local result = "timeout"
       for f = 1, 3600 do
         local t = FR.cur()
@@ -133,6 +204,8 @@ function BOOT()
         if FR.get() ~= "over" then FR.physics() end
         FR.transitions()
         local now = idx()
+        if (b.selfCaps or 0) >= 2 then loops = loops + 1 b.selfCaps = 0
+          trapAt[#trapAt + 1] = "LOOP" end
         if (b.traps or 0) > 0 then traps = traps + b.traps b.traps = 0
           trapAt[#trapAt + 1] = string.format("(%d,%d)", b.x // 1, b.y // 1) end
         if now > ti then result = "up" frames = frames + f break end
@@ -144,13 +217,39 @@ function BOOT()
     end
     totalUp, totalDown, totalTO = totalUp + up, totalDown + down, totalTO + timeout
     totalTraps = totalTraps + traps
+    totalLoops = totalLoops + loops
     lines[#lines + 1] = string.format("  T%-2d %s : up %d down %d stay %d traps %d %s %s",
       ti, info, up, down, timeout, traps, table.concat(trapAt, ""),
       up > 0 and string.format("(avg %.0fs to climb)", frames / up / 60) or "")
   end
   trace("bot playability, flip power " .. fp .. " (6 launches/table, 60s max):")
   if not FLIP_SWEEP then for _, l in ipairs(lines) do trace(l) end end
-  trace(string.format("  total: up %d down %d stay %d  TRAPS %d", totalUp, totalDown, totalTO, totalTraps))
+  trace(string.format("  total: up %d down %d stay %d  TRAPS %d  LOOPS %d", totalUp, totalDown, totalTO, totalTraps, totalLoops))
+  end
+
+  -- 5b. loop/trap hunt across many seeds (bot, 30 s per table)
+  do
+    local runs, loops, traps, where = 0, 0, 0, {}
+    for seed = 1, 20 do
+      for ti = 0, 12 do
+        FR.new_game(seed * 13 + 5)
+        FR.enter(ti)
+        FR.force_state("play")
+        b.x, b.y, b.vx, b.vy, b.noflip = 75, 128, 0, -2.9, true
+        b.caps, b.traps, b.selfCaps, b.flipSince = 0, 0, 0, nil
+        runs = runs + 1
+        for f = 1, 1800 do
+          pad_set(bot_pad(b, FR.cur()))
+          FR.update()
+          if FR.get() ~= "over" then FR.physics() end
+          FR.transitions()
+          if idx() ~= ti or FR.get() == "lost" or FR.get() == "ready" then break end
+        end
+        if (b.selfCaps or 0) >= 2 then loops = loops + 1 where[#where + 1] = "L" .. seed * 13 + 5 .. "/" .. ti end
+        if (b.traps or 0) > 0 then traps = traps + 1 where[#where + 1] = "T" .. seed * 13 + 5 .. "/" .. ti end
+      end
+    end
+    trace(string.format("hunt: %d runs, loops %d, trapped %d %s", runs, loops, traps, table.concat(where, " ")))
   end
 
   -- 6. chaos: random balls + random flipping on many tables
@@ -167,8 +266,8 @@ function BOOT()
       for i = 1, 1500 do
         step(1, {[2] = math.random() < 0.3, [4] = math.random() < 0.3})
         frames = frames + 1
-        local _, _, _, _, _, bb = FR.ring_test(b.x, b.y)
-        if bb then buried = buried + 1 end
+        local h, _, _, push = FR.sdf_test(b.x, b.y)
+        if h and push > BURY_DEPTH then buried = buried + 1 end
         if b.x < -2 or b.x > 152 then escapes = escapes + 1 break end
         local s = FR.get()
         if s == "lost" or s == "over" then break end

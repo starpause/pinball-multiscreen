@@ -80,6 +80,16 @@ push-out = 1 + 4*(1 - cos half)         -- px along the normal, every frame in c
 
 **One difference:** Pokémon's ball sprite is 16 px but the probe radius is only 4, because their wall masks are drawn about 4 px *fatter* than the visible walls. Our ball is 8x8 with radius 4, so visible walls and collision walls are the same pixels.
 
+### Fairy Ring change: walls now use a distance field
+
+On our 8-px ball the ring probe's whole-pixel sampling makes the contact normal jump in 22.5° steps as the ball drifts by fractions of a pixel. A cradled or resting ball visibly jiggles (measured: 0.87 px). Pokémon hides this with a 16-px ball and walls drawn 4 px fatter.
+
+So `sdf_test()` replaces the ring for walls:
+- On entering a table, `build_sdf()` runs an 8SSEDT pass to give every pixel its exact signed distance to the nearest wall.
+- Collision samples that field bilinearly at the ball centre. Contact when `d < radius`; push-out = `radius - d`; normal = the field's gradient. That gives smooth normals and exact depth.
+
+Jiggle is now 0.03 px. `ring_test()` is kept for diagnostics.
+
 ## 4. The bounce
 
 `ApplyCollisionForces` (`home.asm:2520`), the same in `physics()` step 5:
