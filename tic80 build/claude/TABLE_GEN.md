@@ -48,7 +48,7 @@ Tables 0–3 get 1 goal; later tables get 1–3. No trigger or reward repeats wi
 | Trigger | How to complete it | What it pays |
 |---|---|---|
 | **BUDS** | Roll over 3 rollovers | Always **FAIRY**: the companion fairy glows gold and flutters around the table for 20 s. Hit her with any ball for 25,000 × (table + 1). |
-| **SHROOMS** | A mushroom colony: hit the big mushroom → it splits into 3 small ones → pop those → 2 spores appear → roll over both. Regrows after 10 s. | A random reward |
+| **SHROOMS** | A mushroom colony: hit the big mushroom → it splits into 3 small ones. Each small one you pop leaves a spore rollover in its spot. Roll over all 3 spores. After 10 s the spores regrow into small mushrooms. | A random reward |
 | **ACORN** | Hit it 3 times to crack it. Regrows after 10 s. | A random reward |
 
 **Random rewards** (weights are Infinity's percentages):
@@ -95,9 +95,48 @@ The bot test counts **traps**: the ball stays inside a 16-px box for 4 s while n
 - **Creators:** shuffled each pass, each rolling its own chance: bumper 85%, lantern 65% (x2), gold bumper 35%, fairy ring hole 15%, warp ring 8% (not on gentle tables).
 - **Cap:** at most 3 toys on gentle tables, 4–7 later.
 
-## 5. Rhythm
+## 5. Lives, levels and the fairy level
 
-- **Bonus "fairy court":** every 10th table (9, 19, …). It's hand-made: a ring of bumpers around a jackpot warp ring, with kickbacks lit and the centre post up. Reaching it raises your **checkpoint floor**.
+Players see **LEVEL n** (level 1 is the bottom of the tower) and a dim **table code** such as `T3F9A`. The code comes from (seed, level), so a table can be named and replayed.
+
+**Ball loss (Infinity's electric fences, as poo piles):**
+- **Where they go:** never on fairy levels. Elsewhere the chance ramps up with the level:
+
+  | Levels | Centre drain | Each outlane exit |
+  |---|---|---|
+  | 1–2 | none | none |
+  | 3–5 | 25% | 10% |
+  | 6–9 | 40% | 20% |
+  | 11 and up | 50% (Infinity) | 25% (Infinity) |
+
+- **Rolling into one:** a ball that has been in play above the flippers and rolls down into a pile is lost, then relaunched **on the same level**. The pile goes splat and is off for 5 s.
+- **Safe cases:** a ball that comes up from the level below, or was just launched and falls straight back, can't hit a pile. Piles also do nothing during multiball, or while a post guards that drain.
+- **A clean drain** drops you a level, with a 5 s mercy post. Only a drain off **level 1** loses a ball.
+- **Lives:** 3 balls.
+
+**Every new ball gets:**
+- a **20 s ball saver** (Pokémon Pinball's length) that covers drains *and* poo;
+- a 5 s centre post;
+- on level 1, both kickbacks lit.
+
+**Fairy levels (10, 20, 30 …):**
+- The companion fairy lands in the middle. Each of the 2 side fairy rings scores 5,000 and makes her grow: small → medium → big → glowing.
+- Hitting her scores along the way. Hitting the glowing big fairy gives a **blessing**:
+  - a jackpot;
+  - +1 ball (up to 5);
+  - that level becomes a **protected checkpoint**: every level at or below it keeps its drain and outlanes posted (Infinity's BlockedLevel).
+- **Colours:** the fairy's hair, wings and dress cycle through a rainbow every 10 levels.
+
+**Game over:**
+- The table blacks out and the fairy-in-thorns art appears.
+- **This run:** score, high score, level reached, the seed, plus the **toughest** level (most balls lost or drops) and the **quickest** level (fastest climb).
+- **Lifetime, from `pmem`** (persists between sessions): runs, average level, best level ever, and the **deadliest** level (balls lost per visit). The `pmem` layout is in the comment above `game_over()`.
+- **Console log:** a `RUNLOG` line goes to the console for collecting human play data.
+- **Controls:** D-pad replays the same tables (same seed); A/B starts new ones.
+
+## 6. Rhythm
+
+- **Fairy level:** every 10th level (10, 20, …). See section 5.
 - **Falling down:** drops you into the table below with softened speed (Infinity: vx × 0.5, vy × 0.1), and that table's centre post comes up for 5 s as a mercy.
 - **Determinism:** each table is seeded from `(masterSeed, index)`, so revisiting a table gives the same layout, and its goal progress persists.
 

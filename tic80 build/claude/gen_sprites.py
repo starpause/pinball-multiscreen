@@ -715,6 +715,200 @@ for k in range(8):
             sheet[y0 + y][x0 + x] = c
 
 
+# ======================= level-10 fairy, poo piles, game-over art =======================
+# 126/127: poo pile (ball-loss hazard on some drains) / splatted
+put_tile("""
+....1...
+...181..
+..18891.
+..19981.
+.1889881
+.1998891
+18888881
+.111111.
+""", 126)
+put_tile("""
+........
+........
+........
+........
+...1..1.
+.1891981
+18898891
+.111111.
+""", 127)
+
+
+def chibi_fairy(W, H, sad=False):
+    """Procedural chibi fairy (big eyes, butterfly wings, flower crown).
+    Colours: hair b, wings d (+e/f), dress 7 (+6), skin f/e, crown c/a.
+    Hair, wings and dress get recoloured per 10 levels in the game."""
+    g = [[0] * W for _ in range(H)]
+    s = W / 32.0  # designed at 32 px wide
+
+    def ell(cx, cy, rx, ry, c, only_empty=False):
+        for y in range(H):
+            for x in range(W):
+                if ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1:
+                    if not only_empty or g[y][x] == 0:
+                        g[y][x] = c
+
+    def rect(x0, y0, x1, y1, c):
+        for y in range(max(0, int(y0)), min(H, int(y1))):
+            for x in range(max(0, int(x0)), min(W, int(x1))):
+                g[y][x] = c
+
+    cx = W / 2
+    # wings (behind): big upper lobes, small lower lobes, with spots
+    for side in (-1, 1):
+        ell(cx + side * 9.5 * s, 9 * s, 7 * s, 6.5 * s, 0xd)
+        ell(cx + side * 8 * s, 19 * s, 5 * s, 4.5 * s, 0xd)
+        ell(cx + side * 11 * s, 7.5 * s, 3 * s, 2.5 * s, 0xe)
+        ell(cx + side * 9 * s, 19.5 * s, 2 * s, 1.8 * s, 0xe)
+        ell(cx + side * 12.5 * s, 6 * s, 1.2 * s, 1.2 * s, 0xf)
+    # dress: a petal bell, darker hem
+    for y in range(int(17 * s), int(26 * s)):
+        half = (2.5 * s + (y - 17 * s) * 0.6)
+        for x in range(W):
+            if abs(x + 0.5 - cx) <= half:
+                g[y][x] = 0x6 if y >= int(25 * s) - 1 else 0x7
+    # legs + shoes
+    for lx in (cx - 2.5 * s, cx + 1.5 * s):
+        rect(lx, 26 * s, lx + max(1, 1.2 * s), 30 * s, 0xf)
+        rect(lx - 0.5 * s, 30 * s, lx + max(2, 2 * s), 31 * s, 0xb)
+    # arms
+    for side in (-1, 1):
+        rect(cx + side * 4.5 * s - (1 if side < 0 else 0), 17.5 * s, cx + side * 4.5 * s + (0 if side < 0 else 1), 21.5 * s, 0xf)
+    # head (skin) + hair cap + side locks
+    hr = 6.2 * s
+    hy = 10.5 * s
+    ell(cx, hy - 0.8 * s, hr + 1.6 * s, hr + 1.2 * s, 0xb)          # hair mass
+    ell(cx - 6.5 * s, hy + 3.5 * s, 1.8 * s, 4 * s, 0xb)             # locks
+    ell(cx + 6.5 * s, hy + 3.5 * s, 1.8 * s, 4 * s, 0xb)
+    ell(cx, hy + 1.2 * s, hr, hr * 0.92, 0xf)                         # face
+    # bangs: scalloped fringe over the top of the face
+    for x in range(W):
+        fx = x + 0.5 - cx
+        if abs(fx) < hr:
+            edge = hy - 2.8 * s + 1.0 * s * abs(((fx / s) % 3) - 1.5) / 1.5
+            for y in range(int(hy - hr), int(edge)):
+                if 0 <= y < H and g[y][x] == 0xf:
+                    g[y][x] = 0xb
+    # shading under the hair
+    for x in range(W):
+        for y in range(H - 1):
+            if g[y][x] == 0xb and g[y + 1][x] == 0xf:
+                g[y + 1][x] = 0xe
+    # eyes
+    ey = int(hy + 0.6 * s)
+    for side in (-1, 1):
+        ew, eh = max(2, round(2.4 * s)), max(3, round(3.6 * s))
+        ex = int(cx + side * 2.8 * s) - (ew if side < 0 else 0)
+        if sad:
+            for x in range(ex, ex + ew + 1):
+                if 0 <= x < W:
+                    g[ey + eh // 2][x] = 1
+            continue
+        rect(ex, ey, ex + ew, ey + eh, 1)          # dark outline / pupil
+        rect(ex, ey + 1, ex + ew, ey + eh - 1, 0xd)  # big cyan iris
+        g[ey + 1][ex] = 0xf                         # sparkle
+        if eh >= 4:
+            g[ey + eh - 2][ex + ew - 1] = 0xf
+    # blush + mouth
+    if s >= 0.7:
+        for side in (-1, 1):
+            bx = int(cx + side * 4.2 * s) - (1 if side < 0 else 0)
+            if 0 <= bx < W:
+                g[ey + int(2.8 * s)][bx] = 0xb
+        my = ey + int(3.6 * s)
+        g[my][int(cx) - 1] = 1 if not sad else 0xe
+        if sad:
+            g[my + 1][int(cx)] = 1
+    # flower crown
+    for k, fx in enumerate((-4, -1.5, 1.5, 4)):
+        x, y = int(cx + fx * s), int(hy - hr - 0.4 * s)
+        if 0 <= y < H and 0 <= x < W:
+            g[y][x] = 0xc if k % 2 == 0 else 0xa
+            if s >= 0.9 and y + 1 < H:
+                g[y + 1][x] = 0xf
+    # outline pass
+    out = [row[:] for row in g]
+    for y in range(H):
+        for x in range(W):
+            if g[y][x] == 0:
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < W and 0 <= ny < H and g[ny][nx] not in (0, 1):
+                        out[y][x] = 1
+                        break
+    return out
+
+
+def blit(img, x0, y0):
+    for y, row in enumerate(img):
+        for x, c in enumerate(row):
+            if c:
+                sheet[y0 + y][x0 + x] = c
+
+
+# sprite bank (ids 256+): 32x32 big fairy at (0,176) = id 352,
+# 24x24 medium at (32,176) = id 356, 64x64 game-over scene at (64,176) = id 360
+BIG_FAIRY = chibi_fairy(32, 32)
+blit(BIG_FAIRY, 0, 176)
+blit(chibi_fairy(24, 24), 32, 176)
+
+
+def game_over_scene():
+    W = H = 64
+    g = [[0] * W for _ in range(H)]
+    # stars
+    for (x, y) in ((4, 5), (40, 3), (55, 9), (30, 12), (60, 22), (8, 26), (48, 18)):
+        g[y][x] = 0xf
+    # moon with craters
+    for y in range(H):
+        for x in range(W):
+            d = math.hypot(x + 0.5 - 17, y + 0.5 - 15)
+            if d < 10:
+                g[y][x] = 0xc if d > 8.6 else 0xf
+    for (x, y, r) in ((14, 12, 1.6), (20, 18, 1.2), (19, 10, 0.9)):
+        for yy in range(H):
+            for xx in range(W):
+                if math.hypot(xx + 0.5 - x, yy + 0.5 - y) < r:
+                    g[yy][xx] = 0xe
+    # tall grass behind
+    for x in range(W):
+        h = 6 + int(3 * math.sin(x * 0.9) + 2 * math.sin(x * 0.37))
+        for y in range(H - h - 4, H):
+            if 0 <= y < H:
+                g[y][x] = 0x4 if (x + y) % 3 else 0x5
+    # the fairy, sad, kneeling into the grass
+    fairy = chibi_fairy(40, 40, sad=True)
+    for y in range(40):
+        for x in range(40):
+            c = fairy[y][x]
+            if c and 18 + y < H - 3:
+                g[18 + y][20 + x] = c
+    # thorn vines wrapping across her: sine bands with spikes and roses
+    for k, (y0, amp, ph) in enumerate(((44, 2.5, 0.0), (51, 2, 1.7), (56, 1.5, 3.1))):
+        for x in range(4, 60):
+            y = int(y0 + amp * math.sin(x * 0.28 + ph))
+            for dy in (0, 1):
+                if 0 <= y + dy < H:
+                    g[y + dy][x] = 0x5 if dy == 0 else 0x4
+            if x % 5 == k % 5 and 0 <= y - 1 < H:
+                g[y - 1][x] = 1          # thorn
+            if x % 13 == (k * 4) % 13 and 0 <= y - 1 < H:
+                g[y - 1][x], g[y][x] = 0xa, 0xb  # little rose
+    # ground
+    for x in range(W):
+        for y in range(H - 3, H):
+            g[y][x] = 0x6 if y == H - 3 else 0x5
+    return g
+
+
+blit(game_over_scene(), 64, 176)
+
+
 # ======================= write PNG =======================
 def write_indexed_png(path, rows, pal, transparent=True):
     raw = b"".join(b"\0" + bytes(r) for r in rows)

@@ -212,6 +212,21 @@ local TRIGGER_LABEL = {BUDS = "BUDS", ACORN = "ACORN", SHROOM = "SHROOMS"}
 -- ============================ table generation ============================
 local masterSeed = 1
 local function is_bonus(idx) return idx > 0 and (idx + 1) % 10 == 0 end
+-- players see LEVEL idx+1 (level 10, 20, ... are the fairy levels) and a
+-- short table code from (seed, level) so a table can be named / replayed
+local B36 = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+local function code4(n)
+  local out = ""
+  for _ = 1, 4 do
+    local d = n % #B36
+    out = B36:sub(d + 1, d + 1) .. out
+    n = n // #B36
+  end
+  return out
+end
+local function tcode(idx)
+  return "T" .. code4((((masterSeed * 2654435761) ~ (idx * 40503 + 977)) & 0xFFFFFF))
+end
 
 -- does a circle of radius rr at (x,y) touch any solid pixel?
 local function cmap_clear(x, y, rr)
@@ -368,13 +383,26 @@ local function generate(idx)
   t.flippers[2] = {px = CX + KIT.pivot.dx, py = KIT.pivot.y, dir = -1, s = 0, ds = 0, prev = 0}
   t.kick[1] = idx == 0 or t.bonus or rng.chance(40)
   t.kick[2] = idx == 0 or t.bonus or rng.chance(40)
+  -- poo piles on some drains (Infinity's electric fences), ramped in so
+  -- the early levels are friendly: none on levels 1-2, then centre/outlane
+  -- 25/10% up to level 5, 40/20% up to level 9, Infinity's 50/25% after;
+  -- never on fairy levels
+  t.poo = {}
+  local cP, oP = 0, 0
+  if idx >= 2 and not t.bonus then
+    if idx < 5 then cP, oP = 25, 10 elseif idx < 9 then cP, oP = 40, 20 else cP, oP = 50, 25 end
+  end
+  if rng.chance(cP) then t.poo[#t.poo + 1] = {x = CX, y = 132, off = 0} end
+  for _, side in ipairs({-1, 1}) do
+    if rng.chance(oP) then t.poo[#t.poo + 1] = {x = side_x(KIT.kick.dx - 28.5, side), y = 132, off = 0} end
+  end
   -- keep the kit zone out of the scatter grid
   for i = #t.grid, 1, -1 do if t.grid[i].y > 76 then table.remove(t.grid, i) end end
 
   -- 3. piece slots: upper flipper (45%), alcove hole
   for si, side in ipairs({-1, 1}) do
     local pc = side < 0 and t.left or t.right
-    if pc.flipper and not gentle and rng.chance(45) then
+    if pc.flipper and not gentle and not t.bonus and rng.chance(45) then -- (fairy level: rings there)
       local f = pc.flipper
       t.flippers[#t.flippers + 1] = {px = side_x(f.dx, side), py = f.y, dir = -side,
         s = 0, ds = 0, prev = 0, extra = true}
@@ -390,13 +418,15 @@ local function generate(idx)
   if t.brackets then paint_table(t) end -- brackets are walls too
 
   if t.bonus then
-    -- the fairy court: a ring of bumpers around a jackpot ring
-    add_obj(t, "hole", CX, 44, {court = true})
-    for k = 0, 4 do
-      local a = k / 5 * 2 * math.pi - math.pi / 2
-      add_obj(t, k % 2 == 0 and "gold" or "bumper", CX + math.cos(a) * 30, 44 + math.sin(a) * 22)
-    end
-    t.center = 99999 -- centre post up for the whole visit
+    -- the fairy level: our companion fairy lands in the middle. Each side
+    -- fairy ring makes her grow (3 rings: small -> medium -> big -> glowing);
+    -- hitting the glowing big fairy grants a blessing: jackpot, extra ball,
+    -- and this level becomes a protected checkpoint (Infinity's level 10)
+    t.queen = {x = CX, y = 44, stage = 0, cool = 0, flash = 0}
+    add_obj(t, "hole", CX - 46, 62, {queenRing = true})
+    add_obj(t, "hole", CX + 46, 62, {queenRing = true})
+    add_obj(t, "pixie", CX - 30, 20)
+    add_obj(t, "pixie", CX + 30, 20)
     return t
   end
 
@@ -687,12 +717,20 @@ local shake, nudgeCool = 0, 0
 local frame = 0
 local touching, lastNx, lastNy = false, 0, 0
 local lflip, rflip = false, false
+local lostRespawn = "floor" -- where a lost ball comes back: "floor" or "here"
+local overT = 0
+-- per-run analytics, shown on the game-over screen and saved to pmem
+local run = {}
+local function lvstat(idx)
+  run[idx] = run[idx] or {t = 0, loss = 0, drop = 0, climb = 0, clear = nil}
+  return run[idx]
+end
 
 local function say(m, t) msg, msgT = m, t or 120 end
 local parts = {}
 local function sparkle(x, y, n, dust)
   for _ = 1, n or 4 do
-    if #parts >= 28 then return end
+    if #parts >= 40 then return end
     parts[#parts + 1] = {x = x, y = y, vx = (math.random() - 0.5) * (dust and 1.4 or 2),
       vy = (math.random() - 0.5) * 2 - (dust and 0.2 or 0.5),
       t = (dust and 22 or 16) + math.random(0, 8), dust = dust}
@@ -702,8 +740,8 @@ end
 local function add(p, x, y)
   local v = p * mult
   score = score + v
-  local n = v < 150 and 1 or v < 600 and 2 or v < 1500 and 3 or v < 4000 and 4
-    or v < 10000 and 5 or v < 30000 and 7 or 9
+  local n = v < 150 and 2 or v < 600 and 3 or v < 1500 and 5 or v < 4000 and 7
+    or v < 10000 and 9 or v < 30000 and 12 or 16
   sparkle(x or ball.x, y or ball.y, n)
 end
 -- the fairy: follows the ball; when summoned (BUDS) she glows and
@@ -718,6 +756,7 @@ local function get_table(idx)
 end
 
 local function enter_table(idx)
+  if cur and cur.idx ~= idx then lvstat(cur.idx).leftAt = nil end
   cur = get_table(idx)
   paint_table(cur)
   build_sdf()
@@ -725,7 +764,7 @@ local function enter_table(idx)
   for i = #parts, 1, -1 do parts[i] = nil end
   if fairy.mode == "bonus" then fairy.mode = "follow" end -- she stays behind
   best = math.max(best, idx)
-  if cur.bonus then floorIdx = math.max(floorIdx, idx) end
+  lvstat(idx).enter = lvstat(idx).t
   for _, f in ipairs(cur.flippers) do f.s, f.prev, f.ds = 0, 0, 0 end
   bake()
 end
@@ -733,14 +772,18 @@ end
 local function serve()
   extras = {}
   ball.x, ball.y, ball.vx, ball.vy = CX, 129, 0, 0
-  ball.noflip, ball.spin = true, 0
+  ball.noflip, ball.spin, ball.above = true, 0, false
   state = "ready"
+  -- every new ball: a 5 s centre post; level 1 always re-lights its kickbacks
+  cur.center = math.max(cur.center, 5 * 60)
+  if cur.idx == 0 then cur.kick[1], cur.kick[2] = true, true end
 end
 
 local function new_game(seed)
-  masterSeed = seed or (time() // 1) % 100000 + 1
-  tables, floorIdx, best = {}, 0, 0
+  masterSeed = seed or ((tstamp() * 31 + time() // 1) % 1679615) + 1
+  tables, floorIdx, best, run = {}, 0, 0, {}
   score, balls, mult, saver = 0, 3, 1, 0
+  fairy.mode = "follow"
   enter_table(0)
   serve()
 end
@@ -817,33 +860,38 @@ local function check_goals()
 end
 
 -- ============================ objects ============================
--- mushroom colony: 1 big -> 3 small -> 2 spore rollovers -> done
-local function colony_next(ev)
+-- mushroom colony: 1 big -> 3 small; each popped small leaves a spore
+-- rollover in its spot; light all 3 spores -> done; later the spores
+-- regrow into small mushrooms (stage 2 again)
+local function colony_obj(ev, kind, x, y)
+  local o = {kind = kind, x = x, y = y, x0 = x, r = kind == "small" and 3 or 0, alive = true,
+    cool = 0, flash = 0, hits = 0, phase = 0, lit = false, ev = ev}
+  cur.objs[#cur.objs + 1] = o
+  return o
+end
+
+local function colony_grow_smalls(ev)
   local big = ev.members[1]
-  if ev.stage == 1 then
-    ev.stage = 2
-    for k = 0, 2 do
-      local a = math.rad(-90 + k * 120)
-      local o = {kind = "small", x = big.x + math.cos(a) * 12, y = big.y + math.sin(a) * 12,
-        r = 3, alive = true, cool = 0, flash = 0, hits = 0, phase = 0, ev = ev}
-      o.x0 = o.x
-      cur.objs[#cur.objs + 1] = o
-      ev.smalls[#ev.smalls + 1] = o
-    end
-  elseif ev.stage == 2 then
-    ev.stage = 3
-    remove_objs(ev.smalls)
-    ev.smalls = {}
-    for _, dx in ipairs({-9, 9}) do
-      local o = {kind = "spore", x = big.x + dx, y = big.y + 2, r = 0, alive = true,
-        cool = 0, flash = 0, hits = 0, phase = 0, lit = false, ev = ev}
-      o.x0 = o.x
-      cur.objs[#cur.objs + 1] = o
-      ev.spores[#ev.spores + 1] = o
-    end
-  elseif ev.stage == 3 then
-    ev.stage = 4
+  remove_objs(ev.smalls)
+  remove_objs(ev.spores)
+  ev.smalls, ev.spores, ev.stage = {}, {}, 2
+  for k = 0, 2 do
+    local a = math.rad(-90 + k * 120)
+    ev.smalls[#ev.smalls + 1] = colony_obj(ev, "small", big.x + math.cos(a) * 12, big.y + math.sin(a) * 12)
   end
+end
+
+local function colony_next(ev)
+  if ev.stage == 1 then colony_grow_smalls(ev) end
+end
+
+local function colony_progress(ev) -- 0..7 for the HUD
+  if ev.stage == 1 then return 0 end
+  if ev.stage == 4 then return 7 end
+  local n = 1
+  for _, o in ipairs(ev.smalls) do if not o.alive then n = n + 1 end end
+  for _, o in ipairs(ev.spores) do if o.lit then n = n + 1 end end
+  return n
 end
 
 local function capture(o, frames)
@@ -851,10 +899,14 @@ local function capture(o, frames)
   holdT, holdObj, state = frames, o, "hold"
 end
 
+-- levels at or below the checkpoint keep their drain and outlanes blocked
+local function protected() return floorIdx > 0 and cur.idx <= floorIdx end
+
 local function post_list()
   local l = {}
-  if cur.center > 0 then l[#l + 1] = {x = CENTER_POST.x, y = CENTER_POST.y, r = 4} end
-  if cur.posts > 0 then
+  local guard = protected()
+  if cur.center > 0 or guard then l[#l + 1] = {x = CENTER_POST.x, y = CENTER_POST.y, r = 4} end
+  if cur.posts > 0 or guard then
     for _, side in ipairs({-1, 1}) do
       l[#l + 1] = {x = side_x(KIT.post.dx, side), y = KIT.post.y, r = 4}
     end
@@ -875,6 +927,17 @@ local function toy_collide()
         ball.x, ball.y = o.x + nx * (rr + 0.5), o.y + ny * (rr + 0.5)
         return o, nx, ny
       end
+    end
+  end
+  local q = cur.queen
+  if q and not q.gone then
+    local qr = ({5, 8, 11, 11})[q.stage + 1]
+    local dx, dy = ball.x - q.x, ball.y - q.y
+    local d = math.sqrt(dx*dx + dy*dy)
+    if d < qr + BR and d > 0.01 then
+      local nx, ny = dx / d, dy / d
+      ball.x, ball.y = q.x + nx * (qr + BR + 0.5), q.y + ny * (qr + BR + 0.5)
+      return {kind = "queen"}, nx, ny
     end
   end
   for _, p in ipairs(post_list()) do
@@ -903,9 +966,10 @@ local function sensors()
         add(o.kind == "spore" and 300 or 100)
         if not o.lit then o.lit = true end
         if o.kind == "spore" then
-          local all = true
-          for _, sp in ipairs(o.ev.spores) do if not sp.lit then all = false end end
-          if all and o.ev.stage == 3 then colony_next(o.ev) end
+          local ev = o.ev
+          local all = #ev.spores == 3
+          for _, sp in ipairs(ev.spores) do if not sp.lit then all = false end end
+          if all and ev.stage == 2 then ev.stage = 4 end
         end
       end
       o.inside = inside
@@ -919,8 +983,14 @@ local function sensors()
         -- is playing itself (tests count these as LOOPS)
         if ball.flipSince == false then ball.selfCaps = (ball.selfCaps or 0) + 1 end
         ball.flipSince = false
-        add(o.kind == "beetle" and 1000 or o.court and 25000 or 2500, o.x, o.y)
-        say(o.kind == "beetle" and "BEETLE TOSS!" or o.court and "FAIRY COURT!" or "FAIRY RING")
+        add(o.kind == "beetle" and 1000 or o.queenRing and 5000 or 2500, o.x, o.y)
+        say(o.kind == "beetle" and "BEETLE TOSS!" or "FAIRY RING")
+        local q = cur.queen
+        if o.queenRing and q and not q.gone and q.stage < 3 then
+          q.stage = q.stage + 1
+          q.flash = 20
+          say(q.stage == 3 and "SHE GLOWS! HIT HER!" or "THE FAIRY GROWS!", 150)
+        end
         o.flash = 30
         capture(o, o.kind == "beetle" and 30 or 60)
         return
@@ -942,6 +1012,33 @@ local function sensors()
   if cur.updraft > 0 and math.abs(ball.x - CX) < 8 and ball.y > 8 and ball.y < 84 then
     ball.vy = math.max(-4.6, ball.vy - 0.35)
   end
+  -- poo piles: a ball rolling down into one is lost (not during multiball,
+  -- not when a post is guarding the drain)
+  -- only a ball that has been in play above the flippers (not one that just
+  -- came up from below or was just launched and fell straight back)
+  if ball == mainBall and #extras == 0 and ball.vy > 0 and ball.above then
+    for _, p in ipairs(cur.poo) do
+      local guarded = (p.x == CX and (cur.center > 0 or protected())) or (p.x ~= CX and protected())
+      if p.off <= 0 and not guarded and (ball.x - p.x)^2 + (ball.y - p.y)^2 < 36 then
+        p.off = 300
+        if saver > 0 then -- the ball saver covers poo too
+          say("BALL SAVED")
+          saver = 0
+          sparkle(p.x, p.y - 3, 6, true)
+          serve()
+          return
+        end
+        ball.x, ball.y, ball.vx, ball.vy = p.x, p.y - 2, 0, 0
+        say("SPLAT!", 90)
+        shake = 8
+        sparkle(p.x, p.y - 3, 8, true)
+        state, lostT, lostRespawn = "lost", 50, "here"
+        lvstat(cur.idx).loss = lvstat(cur.idx).loss + 1
+        run.poo = (run.poo or 0) + 1
+        return
+      end
+    end
+  end
   if fairy.mode == "bonus" and (ball.x - fairy.x)^2 + (ball.y - fairy.y)^2 < 81 then
     fairy.mode = "follow"
     add(25000 * (cur.idx + 1), fairy.x, fairy.y)
@@ -953,6 +1050,7 @@ end
 
 -- ============================ physics frame ============================
 local step_ball -- forward (defined below physics)
+local game_over -- forward (defined in game flow)
 local function physics()
   lflip, rflip = leftHeld(), rightHeld()
   for _, f in ipairs(cur.flippers) do
@@ -978,9 +1076,7 @@ local function physics()
       ev.regrow = ev.regrow - 1
       if ev.regrow <= 0 then
         ev.regrow = nil
-        remove_objs(ev.spores)
-        ev.spores, ev.stage = {}, 1
-        ev.members[1].alive = true
+        colony_grow_smalls(ev) -- the spores grow back into small mushrooms
       end
     end
   end
@@ -1061,10 +1157,8 @@ step_ball = function()
           sparkle(kind.x, kind.y, k == "shroom" and 5 or 3, true)
           local ev = kind.ev
           if k == "shroom" then colony_next(ev)
-          else
-            local left = 0
-            for _, o in ipairs(ev.smalls) do if o.alive then left = left + 1 end end
-            if left == 0 then colony_next(ev) end
+          else -- a spore rollover appears where the small mushroom was
+            ev.spores[#ev.spores + 1] = colony_obj(ev, "spore", kind.x, kind.y)
           end
         end
       elseif k == "acorn" then
@@ -1077,6 +1171,24 @@ step_ball = function()
         end
       elseif k == "post" then
         amp, kick = 2, KICK_POST
+      elseif k == "queen" then
+        local q = cur.queen
+        amp, kick = 2, 1.6
+        if q.cool <= 0 then
+          q.cool, q.flash = 12, 10
+          if q.stage >= 3 then
+            -- the blessing
+            add(50000 * (cur.idx // 10 + 1), q.x, q.y)
+            sparkle(q.x, q.y, 10, true)
+            balls = math.min(5, balls + 1)
+            floorIdx = math.max(floorIdx, cur.idx)
+            q.gone = true
+            say("BLESSED! CHECKPOINT", 180)
+            shake = 10
+          else
+            add(2000 * (q.stage + 1), q.x, q.y)
+          end
+        end
       end
     end
   end
@@ -1104,6 +1216,7 @@ step_ball = function()
     end
   end
   -- 6. move
+  if ball.y < 108 then ball.above = true end -- has been played on this table
   ball.px, ball.py = ball.x, ball.y
   ball.x = ball.x + math.max(-STEPMAX, math.min(STEPMAX, ball.vx))
   ball.y = ball.y + math.max(-STEPMAX, math.min(STEPMAX, ball.vy))
@@ -1140,11 +1253,17 @@ local function transitions()
     end_multiball()
     local nxt = cur.idx + 1
     local fresh = not (tables[nxt] and tables[nxt].visited)
-    if fresh then add(1000 * nxt) end
+    local ls = lvstat(cur.idx)
+    ls.climb = ls.climb + 1
+    if not ls.clear then ls.clear = ls.t - (ls.enter or 0) end
     enter_table(nxt)
     ball.y = ball.y + WH
-    ball.noflip = true
-    say(cur.bonus and "FAIRY COURT" or ("TABLE " .. nxt))
+    ball.noflip, ball.above = true, false
+    if fresh then -- a new level: score + a burst of sparkles at the ball
+      add(1000 * nxt, ball.x, ball.y - 6)
+      sparkle(ball.x, ball.y - 6, 6)
+    end
+    say(cur.bonus and ("FAIRY LEVEL " .. nxt + 1) or ("LEVEL " .. nxt + 1))
   elseif ball.y > WH + 6 then -- out of the bottom
     if cur.idx <= floorIdx then
       if saver > 0 then
@@ -1152,20 +1271,59 @@ local function transitions()
         saver = 0
         serve()
       else
-        state, lostT = "lost", 60
+        state, lostT, lostRespawn = "lost", 60, "floor"
+        lvstat(cur.idx).loss = lvstat(cur.idx).loss + 1
+        run.drain = (run.drain or 0) + 1
       end
     else
       end_multiball()
+      lvstat(cur.idx).drop = lvstat(cur.idx).drop + 1
       enter_table(cur.idx - 1)
       ball.y = ball.y - WH
       ball.vx, ball.vy = ball.vx * 0.5, ball.vy * 0.1 -- Infinity's softened drop
       cur.center = math.max(cur.center, 5 * 60)       -- mercy post
-      say("DOWN TO " .. cur.idx)
+      say("DOWN TO LEVEL " .. cur.idx + 1)
     end
   end
 end
 
 -- ============================ game flow ============================
+-- persistent lifetime stats in pmem (survive between sessions):
+-- 0 hiscore, 1 best level, 2 runs, 3 sum of levels reached, 4 balls lost
+-- to poo, 5 balls lost on level-1 drains, 6 seconds played,
+-- 16+L balls lost on level L+1, 64+L visits to level L+1, 112+L seconds there
+local PM_HI, PM_BEST, PM_RUNS, PM_SUMLV, PM_POO, PM_DRAIN, PM_SECS = 0, 1, 2, 3, 4, 5, 6
+local function pm_add(i, v) pmem(i, pmem(i) + v) end
+
+game_over = function()
+  state, overT = "over", 0
+  local secs = 0
+  for L, st in pairs(run) do
+    if type(L) == "number" and L < 48 then
+      pm_add(16 + L, st.loss)
+      pm_add(64 + L, 1)
+      pm_add(112 + L, st.t // 60)
+      secs = secs + st.t // 60
+    end
+  end
+  run.newHi = score > pmem(PM_HI)
+  if run.newHi then pmem(PM_HI, score) end
+  if best + 1 > pmem(PM_BEST) then pmem(PM_BEST, best + 1) end
+  pm_add(PM_RUNS, 1)
+  pm_add(PM_SUMLV, best + 1)
+  pm_add(PM_POO, run.poo or 0)
+  pm_add(PM_DRAIN, run.drain or 0)
+  pm_add(PM_SECS, secs)
+  -- one line for anyone running TIC-80 from a console (human analytics)
+  local lv = {}
+  for L = 0, best do
+    local st = run[L]
+    if st then lv[#lv + 1] = string.format("%d:%ds/%dloss/%ddrop", L + 1, st.t // 60, st.loss, st.drop) end
+  end
+  trace(string.format("RUNLOG seed=%s best=%d score=%d %s", code4(masterSeed), best + 1, score,
+    table.concat(lv, " ")))
+end
+
 local function update()
   frame = frame + 1
   for i = #parts, 1, -1 do -- particles age here, not in draw
@@ -1177,11 +1335,25 @@ local function update()
   if shake > 0 then shake = shake - 1 end
   if nudgeCool > 0 then nudgeCool = nudgeCool - 1 end
 
-  if state == "title" or state == "over" then
+  if state == "title" then
     if not vpad then
       for i = 0, 5 do if btnp(i) then new_game() break end end
     end
     return
+  end
+  if state == "over" then
+    overT = overT + 1
+    if not vpad and overT > 45 then
+      -- D-pad: same tables again; A/B: brand new tables
+      for i = 0, 3 do if btnp(i) then new_game(masterSeed) return end end
+      if btnp(4) or btnp(5) then new_game() end
+    end
+    return
+  end
+  if state == "play" then lvstat(cur.idx).t = lvstat(cur.idx).t + 1 end
+  for _, p in ipairs(cur.poo) do if p.off > 0 then p.off = p.off - 1 end end
+  if cur.queen and cur.queen.cool > 0 then
+    cur.queen.cool, cur.queen.flash = cur.queen.cool - 1, cur.queen.flash - 1
   end
   if cur.posts > 0 then cur.posts = cur.posts - 1 end
   if (cur.holeCool or 0) > 0 then cur.holeCool = cur.holeCool - 1 end
@@ -1198,14 +1370,18 @@ local function update()
       state = "play"
       ball.vy = LAUNCH_VY
       ball.vx = (frame % 7 - 3) * 0.1
-      if saver == 0 then saver = 10 * 60 end
+      if saver == 0 then saver = 20 * 60 end -- Pokemon Pinball's 20 s
     end
   elseif state == "hold" then
     holdT = holdT - 1
     if holdT <= 0 then
       state = "play"
       local o = holdObj
-      if o.kind == "beetle" then
+      if o.queenRing then
+        local side = o.x < CX and 1 or -1
+        ball.vx, ball.vy = 1.3 * side, -2.6
+        cur.holeCool = 60
+      elseif o.kind == "beetle" then
         -- the beetle flings the ball hard up the table
         ball.vx, ball.vy = ((frame % 5) - 2) * 0.35, -4.8
         cur.holeCool = 60
@@ -1246,9 +1422,9 @@ local function update()
       balls = balls - 1
       mult = 1
       if balls > 0 then
-        if cur.idx ~= floorIdx then enter_table(floorIdx) end
+        if lostRespawn == "floor" and cur.idx ~= floorIdx then enter_table(floorIdx) end
         serve()
-      else state = "over" end
+      else game_over() end
     end
   end
 end
@@ -1365,6 +1541,15 @@ end
 local function palswap(a, b) poke4(0x3FF0 * 2 + a, b) end
 local function palreset() for i = 0, 15 do poke4(0x3FF0 * 2 + i, i) end end
 
+local RAINBOW = {
+  {C_PINK, C_CYAN, C_LIME}, {C_GOLD, C_PINK, C_CYAN}, {C_RED, C_GOLD, C_LILAC},
+  {C_LIME, C_LILAC, C_PINK}, {C_CYAN, C_LIME, C_GOLD}, {C_LILAC, C_RED, C_CYAN},
+}
+local function fairy_colors()
+  local r = RAINBOW[(cur.idx // 10) % #RAINBOW + 1]
+  palswap(C_PINK, r[1]) palswap(C_CYAN, r[2]) palswap(C_LIME, r[3])
+end
+
 local function draw_flipper(f)
   local k = (f.s // 1) // 2
   local id = 256 + (k // 4) * 48 + (k % 4) * 4
@@ -1424,6 +1609,27 @@ local function draw_world()
     end
   end
   for _, f in ipairs(cur.flippers) do draw_flipper(f) end
+  for _, p in ipairs(cur.poo) do
+    local guarded = (p.x == CX and (cur.center > 0 or protected())) or (p.x ~= CX and protected())
+    if not guarded then spr(p.off > 0 and 127 or 126, p.x - 4 + sx, p.y - 5, 0) end
+  end
+  local q = cur.queen
+  if q and not q.gone then
+    fairy_colors()
+    local bob = math.sin(frame / 18) * 1.5
+    if q.stage >= 3 then
+      circb(q.x + sx, q.y + bob, 15 + (frame // 5) % 3, (frame // 5) % 2 == 0 and C_GOLD or C_WHITE)
+    end
+    if q.flash > 0 and frame % 4 < 2 then palswap(C_FLOORL, C_WHITE) end
+    if q.stage == 0 then
+      spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob, 0, 1, 0, 0, 2, 2)
+    elseif q.stage == 1 then
+      spr(356, q.x - 12 + sx, q.y - 12 + bob, 0, 1, 0, 0, 3, 3)
+    else
+      spr(352, q.x - 16 + sx, q.y - 16 + bob, 0, 1, 0, 0, 4, 4)
+    end
+    palreset()
+  end
 
   for _, e in ipairs(extras) do
     spr((e.rot // 64) % 4, e.x // 1 - 4 + sx, e.y // 1 - 4, 0)
@@ -1444,6 +1650,8 @@ local function draw_world()
     end
   end
   local fy = fairy.y + math.sin(frame / 20) * 2
+  if cur.queen and not cur.queen.gone then return end -- she is the one on the perch
+  fairy_colors()
   if fairy.mode == "bonus" then
     -- summoned: golden glow, blinking when about to leave
     if fairy.t > 180 or frame % 8 < 5 then
@@ -1462,34 +1670,42 @@ local function draw_hud()
   print(string.format("%8d", score), hx, 24, C_WHITE, true, 1, false)
   -- balls left as balls; used-up slots as faint empty rings (a lost ball
   -- used to be a little mushroom, which read as a remaining life)
-  for i = 1, 3 do
+  for i = 1, math.max(3, balls) do
     if i <= balls then spr(0, hx + (i - 1) * 9, 33, 0)
     else circb(hx + (i - 1) * 9 + 3, 36, 3, C_FLOORL) end
   end
   if mult > 1 then print("x" .. mult, hx + 30, 35, C_GOLD, false, 1, true) end
   if #extras > 0 then print("MULTIBALL +" .. #extras, hx, 52, C_CYAN, false, 1, true) end
   if saver > 0 and (saver > 120 or frame % 16 < 8) then print("SAVE", hx + 52, 35, C_CYAN, false, 1, true) end
-  print("TABLE " .. cur.idx, hx, 45, cur.bonus and C_GOLD or C_LIME, false, 1, true)
-  if floorIdx > 0 then print("FLOOR " .. floorIdx, hx + 40, 45, C_LILAC, false, 1, true) end
+  local lv = "LEVEL " .. cur.idx + 1
+  print(lv, hx, 45, cur.bonus and C_GOLD or C_LIME, false, 1, true)
+  print(tcode(cur.idx), hx + #lv * 4 + 4, 45, C_FLOORL, false, 1, true)
+  if floorIdx > 0 and #extras == 0 then
+    print("SAFE TO LV " .. floorIdx + 1, hx, 52, C_LILAC, false, 1, true)
+  end
   -- goals: trigger -> reward with progress
   local y = 66
-  if #cur.events == 0 then
-    print(cur.bonus and "HIT THE RING" or "CLIMB!", hx, y, C_LILAC, false, 1, true)
+  local q = cur.queen
+  if q then
+    if q.gone then
+      print("BLESSED!", hx, y, C_LIME, false, 1, true)
+      print(">CLIMB ON", hx + 4, y + 7, C_LIME, false, 1, true)
+    elseif q.stage < 3 then
+      print("RINGS " .. q.stage .. "/3", hx, y, C_WHITE, false, 1, true)
+      print(">GROW THE FAIRY", hx + 4, y + 7, C_GOLD, false, 1, true)
+    else
+      print("SHE GLOWS!", hx, y, C_GOLD, false, 1, true)
+      print(">HIT HER: BLESSING", hx + 4, y + 7, C_GOLD, false, 1, true)
+    end
+  elseif #cur.events == 0 then
+    print("CLIMB!", hx, y, C_LILAC, false, 1, true)
   end
   for _, ev in ipairs(cur.events) do
     local n, tot = 0, #ev.members
     if ev.trigger == "ACORN" then n, tot = ev.members[1].hits, 3
       if not ev.members[1].alive then n = 3 end
     elseif ev.trigger == "SHROOM" then
-      tot = 6
-      if ev.stage == 1 then n = 0
-      elseif ev.stage == 2 then
-        n = 1
-        for _, o in ipairs(ev.smalls) do if not o.alive then n = n + 1 end end
-      elseif ev.stage == 3 then
-        n = 4
-        for _, o in ipairs(ev.spores) do if o.lit then n = n + 1 end end
-      else n = 6 end
+      n, tot = colony_progress(ev), 7
     else for _, o in ipairs(ev.members) do if o.lit then n = n + 1 end end end
     local c = ev.times > 0 and C_LIME or C_WHITE
     print(TRIGGER_LABEL[ev.trigger] .. " " .. n .. "/" .. tot, hx, y, c, false, 1, true)
@@ -1514,12 +1730,55 @@ local function draw_hud()
   elseif state == "ready" and frame % 40 < 30 then
     print("FLIP TO LAUNCH", hx, 127, C_LILAC, false, 1, true)
   end
-  if state == "title" or state == "over" then
+  if state == "title" then
     rect(15, 46, 120, 40, C_KEY) rectb(15, 46, 120, 40, C_PINK) rectb(17, 48, 116, 36, C_MOSS)
-    local t = state == "over" and "GAME OVER" or "FAIRY RING"
-    print(t, CX - #t * 3, 54, C_GOLD)
-    if state == "over" then print("REACHED TABLE " .. best, CX - 33, 64, C_LILAC, false, 1, true) end
-    if frame % 40 < 28 then print("PRESS Z OR X", CX - 35, 74, C_LILAC) end
+    print("FAIRY RING", CX - 30, 54, C_GOLD)
+    if frame % 40 < 28 then print("PRESS ANY BUTTON", CX - 47, 72, C_LILAC) end
+  end
+end
+
+-- game over: the table blacks out, the fairy-in-thorns art, and stats
+local function draw_over()
+  cls(C_KEY)
+  spr(360, 4, 36, 0, 1, 0, 0, 8, 8)
+  print("GAME OVER", 8, 8, C_PINK, false, 2)
+  print("GAME OVER", 7, 7, C_GOLD, false, 2)
+  local x, y = 76, 30
+  local function line(label, val, c)
+    print(label, x, y, C_LILAC, false, 1, true)
+    print(val, x + 52, y, c or C_WHITE, false, 1, true)
+    y = y + 8
+  end
+  line("SCORE", tostring(score), run.newHi and C_GOLD or C_WHITE)
+  line("HIGH SCORE", tostring(pmem(PM_HI)), C_GOLD)
+  line("REACHED", "LEVEL " .. best + 1)
+  line("TABLES", "SEED " .. code4(masterSeed), C_FLOORL)
+  -- this run: the toughest and the quickest level
+  local hard, hardN, easy, easyT = nil, 0, nil, 1e9
+  for L, st in pairs(run) do
+    if type(L) == "number" then
+      local bad = st.loss * 2 + st.drop
+      if bad > hardN then hard, hardN = L, bad end
+      if st.clear and st.clear < easyT then easy, easyT = L, st.clear end
+    end
+  end
+  y = y + 2
+  if hard then line("TOUGHEST", "LV " .. hard + 1 .. " " .. run[hard].loss .. "L " .. run[hard].drop .. "D", C_RED) end
+  if easy then line("QUICKEST", "LV " .. easy + 1 .. " " .. string.format("%.1fs", easyT / 60), C_LIME) end
+  -- lifetime (all sessions, from pmem)
+  local runs = math.max(1, pmem(PM_RUNS))
+  y = y + 2
+  line("RUNS", tostring(pmem(PM_RUNS)) .. "  AVG LV " .. string.format("%.1f", pmem(PM_SUMLV) / runs))
+  line("BEST EVER", "LEVEL " .. pmem(PM_BEST))
+  local hardEver, rate = nil, 0
+  for L = 0, 47 do
+    local v = pmem(64 + L)
+    if v >= 2 and pmem(16 + L) / v > rate then hardEver, rate = L, pmem(16 + L) / v end
+  end
+  if hardEver then line("DEADLIEST", string.format("LV %d %.1f/VISIT", hardEver + 1, rate), C_RED) end
+  if overT > 45 and frame % 40 < 30 then
+    print("D-PAD: SAME TABLES", 76, 118, C_LILAC, false, 1, true)
+    print("A/B: NEW TABLES", 76, 126, C_GOLD, false, 1, true)
   end
 end
 
@@ -1551,6 +1810,7 @@ function TIC()
   if state ~= "title" and state ~= "over" then physics() end
   transitions()
   update_fairy()
+  if state == "over" then draw_over() return end
   draw_world()
   draw_hud()
 end
@@ -1569,6 +1829,11 @@ FR = {
   extras = function() return extras end,
   fairy = fairy,
   grant_reward = function(rw) grant_reward(rw) end,
+  floor = function() return floorIdx end,
+  run = function() return run end,
+  draw_over = function() draw_over() end,
+  set_balls = function(n) balls = n end,
+  tcode = tcode,
   floor = function() return floorIdx end,
   tic_draw = function() update_fairy() draw_world() draw_hud() end,
 }

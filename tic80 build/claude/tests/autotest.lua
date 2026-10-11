@@ -193,18 +193,27 @@ function BOOT()
     end
     hit(big)
     local st2 = ev.stage
-    for _, o in ipairs(ev.smalls) do hit(o) end
-    local st3 = ev.stage
+    local smalls = {}
+    for _, o in ipairs(ev.smalls) do smalls[#smalls + 1] = o end
+    for _, o in ipairs(smalls) do hit(o) end
+    local nSpores, sameSpots = #ev.spores, true
+    for i, sp in ipairs(ev.spores) do
+      if math.abs(sp.x - smalls[i].x) > 0.1 or math.abs(sp.y - smalls[i].y) > 0.1 then sameSpots = false end
+    end
     for _, sp in ipairs(ev.spores) do
       b.x, b.y, b.vx, b.vy = sp.x, sp.y - 1, 0, 0.3
       step(2, {})
     end
     step(2, {})
     local paid = ev.times
-    for i = 1, 620 do step(1, {}) b.x, b.y, b.vx, b.vy = 75, 40, 0, 0 end
-    trace(string.format("colony (table %d): stages 1->%d->%d, paid %d, regrown=%s %s", ti, st2, st3,
-      paid, tostring(ev.stage == 1 and big.alive),
-      (st2 == 2 and st3 == 3 and paid == 1 and ev.stage == 1) and "ok" or "PROBLEM"))
+    FR.force_state("ready") -- park the ball (out of play) while the colony regrows
+    for i = 1, 620 do step(1, {}) end
+    FR.force_state("play")
+    local alive = 0
+    for _, o in ipairs(ev.smalls) do if o.alive then alive = alive + 1 end end
+    trace(string.format("colony (table %d): big->stage %d, %d spores in the smalls' spots=%s, paid %d, regrew %d smalls %s",
+      ti, st2, nSpores, tostring(sameSpots), paid, alive,
+      (st2 == 2 and nSpores == 3 and sameSpots and paid == 1 and ev.stage == 2 and alive == 3) and "ok" or "PROBLEM"))
   end
   -- multiball: 2 extra balls, they resolve without errors
   do
@@ -261,6 +270,58 @@ function BOOT()
     trace(string.format("fairy: summoned=%s caught=%s bonus +%d %s", mode1, tostring(FR.fairy.mode == "follow"),
       select(2, FR.get()) - s0, (mode1 == "bonus" and FR.fairy.mode == "follow") and "ok" or "PROBLEM"))
   end
+
+  -- 1g. poo piles, fairy level, game over
+  do -- poo: a ball rolling into one is lost, relaunched on the same level
+    FR.new_game(7)
+    local ti = find_table(function(t) return t.poo and #t.poo > 0 end)
+    FR.enter(ti) FR.force_state("play")
+    local p = FR.cur().poo[1]
+    FR.set_balls(3)
+    FR.cur().center = 0
+    b.x, b.y, b.vx, b.vy, b.noflip, b.above = p.x, p.y - 10, 0, 1.2, false, true
+    for i = 1, 120 do step(1, {}) end
+    local _, _, nb, lvl, _ = FR.get()
+    trace(string.format("poo (level %d at %d,%d): balls 3->%d, still on level %d, state %s, pile off=%s %s",
+      ti + 1, p.x, p.y, nb, lvl + 1, FR.get(), tostring(p.off > 0),
+      (nb == 2 and lvl == ti and FR.get() == "ready") and "ok" or "PROBLEM"))
+    -- a ball coming up from BELOW that falls straight back onto the pile is safe
+    p.off = 0
+    FR.cur().center = 0
+    FR.force_state("play")
+    b.x, b.y, b.vx, b.vy, b.noflip, b.above = p.x, p.y + 6, 0, -0.8, true, false
+    for i = 1, 90 do step(1, {}) end
+    local _, _, nb2 = FR.get()
+    trace(string.format("poo from below: balls %d->%d %s", nb, nb2, nb2 == nb and "ok (safe)" or "PROBLEM"))
+  end
+  do -- the fairy level: 3 rings grow her, hitting the glowing fairy = blessing
+    FR.new_game(7) FR.enter(9) FR.force_state("play")
+    local t = FR.cur()
+    local q = t.queen
+    local rings = {}
+    for _, o in ipairs(t.objs) do if o.queenRing then rings[#rings + 1] = o end end
+    for k = 1, 3 do
+      local r = rings[(k - 1) % 2 + 1]
+      b.x, b.y, b.vx, b.vy, b.noflip = r.x, r.y - 6, 0, 0.6, false
+      for i = 1, 160 do step(1, {}) if q.stage >= k then break end end
+      for i = 1, 150 do step(1, {}) end -- hold + ring cooldown, ball released
+    end
+    local stageAfter = q.stage
+    FR.set_balls(2)
+    b.x, b.y, b.vx, b.vy = q.x, q.y + 20, 0, -1.5
+    for i = 1, 40 do step(1, {}) if q.gone then break end end
+    local _, _, nb = FR.get()
+    trace(string.format("fairy level: grew to stage %d, blessed=%s, balls 2->%d, checkpoint level %d %s",
+      stageAfter, tostring(q.gone == true), nb, FR.floor() + 1,
+      (stageAfter == 3 and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
+    -- below the checkpoint the drain is guarded
+    FR.enter(5) FR.force_state("play")
+    b.x, b.y, b.vx, b.vy = 75, 118, 0, 1.0
+    for i = 1, 60 do step(1, {}) end
+    trace(string.format("protected level 6: ball after centre drain attempt y=%.0f (%s)", b.y,
+      (select(4, FR.get()) == 5 and b.y < 136) and "guarded ok" or "DRAINED"))
+  end
+  trace("table codes: level1=" .. FR.tcode(0) .. " level10=" .. FR.tcode(9))
 
   -- 2. launch on table 0
   FR.new_game(1)
@@ -407,6 +468,21 @@ function BOOT()
   FR.grant_reward("MULTIBALL") FR.grant_reward("FAIRY")
   step(24, {})
   shot("action")
+  -- the fairy level, grown, and the game-over screen
+  FR.new_game(7) FR.enter(9) FR.force_state("play")
+  FR.cur().queen.stage = 3
+  b.x, b.y = 40, 100
+  shot("fairy_level")
+  FR.new_game(7) FR.enter(3)
+  for L = 0, 6 do FR.run()[L] = {t = 600 + L * 300, loss = L % 3, drop = L % 2, climb = 1, clear = 300 + L * 200} end
+  FR.force_state("over")
+  FR.draw_over()
+  trace("SHOT game_over")
+  for y = 0, 135 do
+    local row = {}
+    for x = 0, 239 do row[#row + 1] = string.format("%x", pix(x, y)) end
+    trace(table.concat(row))
+  end
   FR.new_game(7)
   FR.force_state("title")
   shot("title")
