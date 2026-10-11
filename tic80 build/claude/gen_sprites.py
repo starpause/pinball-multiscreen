@@ -576,6 +576,55 @@ put("\n".join(r if i not in (5, 6, 7, 8, 9) else r[:6] + "1" + r[7:9] + "1" + r[
 put(remap(BUMPER, {"a": "c", "8": "9", "b": "f", "f": "f"}), *tile_xy(106))
 put(remap(BUMPER, {"a": "f", "8": "c", "b": "c", "f": "c"}), *tile_xy(108))
 
+# 128/130: yellow pixie (moving bumper that bursts into dust), recoloured fairy
+PIXIE_MAP = {"b": "c", "d": "7"}
+put(remap(FAIRY_UP.replace(" ", "."), PIXIE_MAP), *tile_xy(128))
+put(remap(FAIRY_DOWN.replace(" ", "."), PIXIE_MAP), *tile_xy(130))
+
+# 132/134: beetle (catches the ball and tosses it up): closed / open jaws
+BEETLE_BODY = [
+    "......1441......",
+    ".....144441.....",
+    "..1..155551..1..",
+    "...115575d511...",
+    "....15575d551...",
+    ".11155575d55111.",
+    "....15575d551...",
+    "...115575d511...",
+    "..1.15555d551.1.",
+    "....1555d5551...",
+    ".....155d551....",
+    "......11111.....",
+    "................",
+    "................",
+]
+put("\n".join(["......1..1......", ".......11......."] + BEETLE_BODY), *tile_xy(132))
+put("\n".join(["....1......1....", ".....1....1....."] + BEETLE_BODY), *tile_xy(134))
+
+# 31: small colony mushroom (stage 2), 110/111: spore rollover unlit / lit (stage 3)
+put_tile("""
+..1111..
+.13e331.
+1333e331
+.111111.
+..1ee1..
+..1ee1..
+...11...
+........
+""", 31)
+SPORE = """
+........
+...11...
+..1331..
+.13e331.
+..1331..
+...11...
+........
+........
+"""
+put_tile(SPORE, 110)
+put_tile(remap(SPORE, {"3": "d", "e": "f"}), 111)
+
 # 28: updraft wind arrow, 29: blocker post (small mushroom), 30: lit post
 put_tile("""
 ...dd...

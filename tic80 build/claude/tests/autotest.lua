@@ -145,6 +145,123 @@ function BOOT()
       f.py + 12.6, minY, minY > f.py and "stays down (ok)" or "SCOOPED UP"))
   end
 
+  -- 1e. a goal pays out ONCE per completion (acorn stays broken for 10 s)
+  do
+    FR.new_game(7)
+    local found
+    for ti = 0, 20 do
+      local t = FR.generate(ti)
+      for _, ev in ipairs(t.events) do if ev.trigger == "ACORN" then found = ti break end end
+      if found then break end
+    end
+    FR.enter(found) FR.force_state("play")
+    local t = FR.cur()
+    local ev
+    for _, e in ipairs(t.events) do if e.trigger == "ACORN" then ev = e end end
+    local a = ev.members[1]
+    b.x, b.y, b.vx, b.vy = 75, 60, 0, 0
+    a.alive, a.hits = false, 3 -- break it
+    local s0 = select(2, FR.get())
+    for i = 1, 300 do step(1, {}) end
+    trace(string.format("acorn goal on table %d: paid %d time(s) in 5 s (score +%d) %s", found, ev.times,
+      select(2, FR.get()) - s0, ev.times == 1 and "ok" or "MULTI-PAY BUG"))
+  end
+
+  -- 1f. new mechanics
+  local function find_table(pred)
+    for ti = 0, 40 do
+      local t = FR.generate(ti)
+      if pred(t) then return ti end
+    end
+  end
+  -- mushroom colony: big -> 3 small -> 2 spores -> goal, then regrows
+  do
+    FR.new_game(7)
+    local ti = find_table(function(t)
+      for _, e in ipairs(t.events) do if e.trigger == "SHROOM" then return true end end
+    end)
+    FR.enter(ti) FR.force_state("play")
+    local ev
+    for _, e in ipairs(FR.cur().events) do if e.trigger == "SHROOM" then ev = e end end
+    local big = ev.members[1]
+    local function hit(o)
+      b.x, b.y, b.vx, b.vy, b.noflip = o.x, o.y - o.r - 6, 0, 1.5, false
+      for i = 1, 60 do
+        step(1, {})
+        if not o.alive then return true end
+      end
+    end
+    hit(big)
+    local st2 = ev.stage
+    for _, o in ipairs(ev.smalls) do hit(o) end
+    local st3 = ev.stage
+    for _, sp in ipairs(ev.spores) do
+      b.x, b.y, b.vx, b.vy = sp.x, sp.y - 1, 0, 0.3
+      step(2, {})
+    end
+    step(2, {})
+    local paid = ev.times
+    for i = 1, 620 do step(1, {}) b.x, b.y, b.vx, b.vy = 75, 40, 0, 0 end
+    trace(string.format("colony (table %d): stages 1->%d->%d, paid %d, regrown=%s %s", ti, st2, st3,
+      paid, tostring(ev.stage == 1 and big.alive),
+      (st2 == 2 and st3 == 3 and paid == 1 and ev.stage == 1) and "ok" or "PROBLEM"))
+  end
+  -- multiball: 2 extra balls, they resolve without errors
+  do
+    FR.new_game(7) FR.enter(3) FR.force_state("play")
+    b.x, b.y, b.vx, b.vy, b.noflip = 75, 60, 0, 0, false
+    FR.grant_reward("MULTIBALL")
+    local n0 = #FR.extras()
+    local maxE, gone = n0, nil
+    for i = 1, 1800 do
+      pad_set(bot_pad(b, FR.cur()))
+      FR.update() if FR.get() ~= "over" then FR.physics() end FR.transitions()
+      for _, e in ipairs(FR.extras()) do
+        local p = bot_pad(e, FR.cur())
+        if p[2] then P[2] = true end if p[4] then P[4] = true end
+      end
+      if #FR.extras() == 0 and not gone then gone = i end
+    end
+    trace(string.format("multiball: spawned %d extras, all resolved after %s frames, state %s %s", n0,
+      tostring(gone), FR.get(), n0 == 2 and "ok" or "PROBLEM"))
+  end
+  -- beetle: catches and throws the ball up
+  do
+    FR.new_game(7)
+    local ti = find_table(function(t)
+      for _, o in ipairs(t.objs) do if o.kind == "beetle" then return true end end
+    end)
+    if ti then
+      FR.enter(ti) FR.force_state("play")
+      local bt
+      for _, o in ipairs(FR.cur().objs) do if o.kind == "beetle" then bt = o end end
+      b.x, b.y, b.vx, b.vy, b.noflip = bt.x, bt.y - 12, 0, 1.0, false
+      local held, minY, climbed = false, 999, false
+      for i = 1, 140 do
+        step(1, {})
+        if FR.get() == "hold" then held = true end
+        if held and FR.get() == "play" then minY = math.min(minY, b.y) end
+        if idx() > ti then climbed = true break end
+      end
+      trace(string.format("beetle (table %d at %d,%d): caught=%s, thrown to y=%.0f, out the top=%s %s", ti,
+        bt.x, bt.y, tostring(held), minY, tostring(climbed),
+        (held and (climbed or minY < bt.y - 40)) and "ok" or "PROBLEM"))
+    else trace("beetle: none generated in tables 0-40") end
+  end
+  -- bonus fairy: summon, hit her
+  do
+    FR.new_game(7) FR.enter(2) FR.force_state("play")
+    b.x, b.y, b.vx, b.vy = 75, 60, 0, 0
+    FR.grant_reward("FAIRY")
+    local mode1 = FR.fairy.mode
+    local s0 = select(2, FR.get())
+    FR.fairy.x, FR.fairy.y = b.x, b.y
+    FR.fairy.tx, FR.fairy.ty = b.x, b.y
+    step(2, {})
+    trace(string.format("fairy: summoned=%s caught=%s bonus +%d %s", mode1, tostring(FR.fairy.mode == "follow"),
+      select(2, FR.get()) - s0, (mode1 == "bonus" and FR.fairy.mode == "follow") and "ok" or "PROBLEM"))
+  end
+
   -- 2. launch on table 0
   FR.new_game(1)
   step(1, {[2] = true})
@@ -284,6 +401,12 @@ function BOOT()
     b.x, b.y, b.vx, b.vy = 75, 60, 0, 0
     shot("table_" .. ti)
   end
+  -- action shot: multiball + summoned fairy + a colony mid-way
+  FR.new_game(7) FR.enter(13) FR.force_state("play")
+  b.x, b.y, b.vx, b.vy, b.noflip = 60, 90, 0.5, 0, false
+  FR.grant_reward("MULTIBALL") FR.grant_reward("FAIRY")
+  step(24, {})
+  shot("action")
   FR.new_game(7)
   FR.force_state("title")
   shot("title")

@@ -41,21 +41,39 @@ The scatter grid never reaches below y 76.
 
 ## 3. Goals: trigger → reward (Infinity's events)
 
-Tables 0–3 get 1 goal; later tables get 1–3. Triggers and rewards are each picked by weight (the weights are Infinity's percentages), and no trigger or reward repeats within a table:
+Tables 0–3 get 1 goal; later tables get 1–3. No trigger or reward repeats within a table, and the HUD shows each goal's progress. Each goal pays out once when completed, then re-arms when its trigger resets.
 
-- **Triggers:**
-  - BUDS: 3 rollovers spaced 13 px
-  - TOADS: 3 standup targets
-  - ACORN: a bash toy that breaks after 3 hits
-- **Rewards:**
-  - KICKBACK: lights both kickbacks
-  - SIDE POSTS: close the outlanes for 30 s
-  - CENTER POST: blocks the drain for 30 s
-  - UPDRAFT: a wind column that blows the ball up for 15 s. It's a centre feature, so at most one per table, and the generator keeps the column clear.
-  - MULT +1
-  - JACKPOT
+**Triggers:**
 
-Goals re-arm after paying out. Completing every goal on a table once gives **TABLE CLEAR** (+10,000), and the tower in the HUD marks the table green.
+| Trigger | How to complete it | What it pays |
+|---|---|---|
+| **BUDS** | Roll over 3 rollovers | Always **FAIRY**: the companion fairy glows gold and flutters around the table for 20 s. Hit her with any ball for 25,000 × (table + 1). |
+| **SHROOMS** | A mushroom colony: hit the big mushroom → it splits into 3 small ones → pop those → 2 spores appear → roll over both. Regrows after 10 s. | A random reward |
+| **ACORN** | Hit it 3 times to crack it. Regrows after 10 s. | A random reward |
+
+**Random rewards** (weights are Infinity's percentages):
+- KICKBACK: lights both outlane kickbacks
+- SIDE POSTS: close the outlanes for 30 s
+- CENTER POST: blocks the drain for 30 s
+- UPDRAFT: a wind column for 15 s. It's a centre feature, so at most one per table.
+- MULT +1
+- JACKPOT
+- **MULTIBALL**, from table 2 on: 2 extra balls launch from the bottom.
+  - An extra ball that leaves through the top gives +5,000.
+  - If the main ball drains, an extra ball takes its place.
+  - Changing tables ends multiball, and any extras still in play become bonus points.
+
+Completing every goal on a table once gives **TABLE CLEAR** (+10,000).
+
+**Toys** placed by the scatter:
+- **Bumpers:** red (100 points) and gold (500).
+- **Yellow pixies:** drift side to side, kick the ball, burst into dust (300 points) and regrow after 6 s.
+- **Fairy rings:** hold the ball, pay 2,500, then eject it toward the flippers.
+- **Beetles:** catch the ball and throw it hard up the table, often all the way to the next one.
+
+Rings and beetles are "catchers": at most 2 per table, at least 36 px apart, and all of them ignore the ball for 1–1.5 s after an eject.
+
+**Sparkles** appear only when you score, and bigger scores make more of them. Breaking things (pixies, mushrooms, acorns) gives off dust instead.
 
 ## 4. Free toys: grid scatter with clearance (Infinity's ObjectPlacement)
 

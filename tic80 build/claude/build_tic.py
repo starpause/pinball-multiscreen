@@ -125,7 +125,17 @@ def main(lua_path, png_path, out_path):
     cart += chunk(CHUNK_TILES, sheet_to_tiles(rows, 0, pal))
     if h == 256:
         cart += chunk(CHUNK_SPRITES, sheet_to_tiles(rows, 128, pal))
-    cart += chunk(CHUNK_CODE, code)
+    # code over 64 KB is split across code banks, up to 8 banks = 512 KB.
+    # TIC-80 lays banks out in REVERSE order (bank 7 first), so the first
+    # 64 KB goes in bank 7, the next in bank 6, ... (verified headless)
+    assert len(code) <= 8 * 0x10000, "code too large for 8 banks"
+    for i in range(0, (len(code) + 0xFFFF) // 0x10000):
+        part = code[i * 0x10000:(i + 1) * 0x10000]
+        bank = 7 - i if len(code) > 0x10000 else 0
+        if len(part) == 0x10000:  # a full bank: size field can't hold 65536
+            cart += bytes([CHUNK_CODE | (bank << 5)]) + bytes(3) + part
+        else:
+            cart += chunk(CHUNK_CODE, part, bank)
     open(out_path, "wb").write(cart)
     print("wrote %s: %d bytes code, %dx%d sheet" % (out_path, len(code), w, h))
 
