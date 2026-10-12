@@ -22,7 +22,10 @@ def main():
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(log_path, "a", encoding="utf-8") as log:
         log.write("SESSION %s\n" % stamp)
-        p = subprocess.Popen([TIC, "--skip", "--fs=" + HERE, "--cmd=load fairy_ring.tic & run"],
+        # pass the cart by full path (not --fs): TIC-80 then uses its normal
+        # settings folder, so your gamepad / key mapping is kept between runs
+        cart = os.path.join(HERE, "fairy_ring.tic")
+        p = subprocess.Popen([TIC, "--skip", cart],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                              encoding="utf-8", errors="replace")
         for line in p.stdout:

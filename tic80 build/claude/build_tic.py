@@ -14,6 +14,7 @@ palette and indices are used as-is (draw in Aseprite etc. in indexed mode).
 Otherwise pixels are matched to the nearest SWEETIE-16 colour (TIC-80's
 default palette). Pure stdlib: no Pillow needed.
 """
+import os
 import struct
 import sys
 import zlib
@@ -26,6 +27,7 @@ SWEETIE16 = [
 ]
 
 CHUNK_TILES, CHUNK_SPRITES, CHUNK_CODE, CHUNK_PALETTE, CHUNK_DEFAULT = 1, 2, 5, 12, 17
+CHUNK_MAP, CHUNK_PATTERNS = 4, 15
 
 
 def read_png(path):
@@ -114,7 +116,20 @@ def chunk(kind, data, bank=0):
     return bytes([kind | (bank << 5)]) + struct.pack("<H", len(data)) + b"\0" + data
 
 
-def main(lua_path, png_path, out_path):
+def art_chunks(root):
+    """Full-screen game-over art made by art/import_gameover.py, if present:
+    the image goes in the 2nd half of map RAM (0x8000 + 16320; the first
+    half is the game's table snapshot), the per-scanline palettes go in
+    music-pattern RAM (0x11164; the game has no music yet)."""
+    scr = os.path.join(root, "art", "gameover_screen.bin")
+    pal = os.path.join(root, "art", "gameover_pal.bin")
+    if not (os.path.exists(scr) and os.path.exists(pal)):
+        return []
+    return [(CHUNK_MAP, bytes(16320) + open(scr, "rb").read()),
+            (CHUNK_PATTERNS, open(pal, "rb").read())]
+
+
+def main(lua_path, png_path, out_path, extra=()):
     code = open(lua_path, "rb").read()
     w, h, rows, plte = read_png(png_path)
     assert w == 128 and h in (128, 256), "sheet must be 128x128 or 128x256 (got %dx%d)" % (w, h)
@@ -136,6 +151,8 @@ def main(lua_path, png_path, out_path):
             cart += bytes([CHUNK_CODE | (bank << 5)]) + bytes(3) + part
         else:
             cart += chunk(CHUNK_CODE, part, bank)
+    for kind, data in extra:
+        cart += chunk(kind, data)
     open(out_path, "wb").write(cart)
     print("wrote %s: %d bytes code, %dx%d sheet" % (out_path, len(code), w, h))
 

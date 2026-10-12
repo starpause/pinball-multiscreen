@@ -483,6 +483,14 @@ function BOOT()
     for x = 0, 239 do row[#row + 1] = string.format("%x", pix(x, y)) end
     trace(table.concat(row))
   end
+  FR.force_state("stats")
+  FR.draw_stats()
+  trace("SHOT stats_page")
+  for y = 0, 135 do
+    local row = {}
+    for x = 0, 239 do row[#row + 1] = string.format("%x", pix(x, y)) end
+    trace(table.concat(row))
+  end
   FR.new_game(7)
   FR.force_state("title")
   shot("title")

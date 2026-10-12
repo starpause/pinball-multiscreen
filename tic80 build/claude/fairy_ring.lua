@@ -28,6 +28,12 @@ local WW, WH  = 150, 136 -- one table = one screen (22 x 20 Infinity units)
 local CX      = 75       -- table centre line
 local SNAP    = 0x8000   -- map RAM: baked background of the current table
 local SCRBYTES = 16320
+-- game-over art (art/import_gameover.py, packed by build.py): the image in
+-- the 2nd half of map RAM, one 16-colour palette per scanline in music-
+-- pattern RAM (no music yet), the game's own palette saved right after
+local OVER_IMG = SNAP + SCRBYTES
+local OVER_PAL = 0x11164
+local GAME_PAL = OVER_PAL + 136 * 48
 
 -- tuned feel (px/frame)
 -- kicker strengths per rule: "add" = Pokemon (bounce 1/4 + push),
@@ -780,6 +786,7 @@ local function serve()
 end
 
 local function new_game(seed)
+  memcpy(0x3FC0, GAME_PAL, 48) -- back from the game-over palettes
   masterSeed = seed or ((tstamp() * 31 + time() // 1) % 1679615) + 1
   tables, floorIdx, best, run = {}, 0, 0, {}
   score, balls, mult, saver = 0, 3, 1, 0
@@ -1344,10 +1351,15 @@ local function update()
   if state == "over" then
     overT = overT + 1
     if not vpad and overT > 45 then
-      -- D-pad: same tables again; A/B: brand new tables
+      -- D-pad: same tables again; A/B: brand new tables; X/Y: stats page
       for i = 0, 3 do if btnp(i) then new_game(masterSeed) return end end
-      if btnp(4) or btnp(5) then new_game() end
+      if btnp(4) or btnp(5) then new_game() return end
+      if btnp(6) or btnp(7) then state = "stats" end
     end
+    return
+  end
+  if state == "stats" then
+    if not vpad and (btnp(6) or btnp(7)) then state = "over" end
     return
   end
   if state == "play" then lvstat(cur.idx).t = lvstat(cur.idx).t + 1 end
@@ -1738,22 +1750,8 @@ local function draw_hud()
 end
 
 -- game over: the table blacks out, the fairy-in-thorns art, and stats
-local function draw_over()
-  cls(C_KEY)
-  spr(360, 4, 36, 0, 1, 0, 0, 8, 8)
-  print("GAME OVER", 8, 8, C_PINK, false, 2)
-  print("GAME OVER", 7, 7, C_GOLD, false, 2)
-  local x, y = 76, 30
-  local function line(label, val, c)
-    print(label, x, y, C_LILAC, false, 1, true)
-    print(val, x + 52, y, c or C_WHITE, false, 1, true)
-    y = y + 8
-  end
-  line("SCORE", tostring(score), run.newHi and C_GOLD or C_WHITE)
-  line("HIGH SCORE", tostring(pmem(PM_HI)), C_GOLD)
-  line("REACHED", "LEVEL " .. best + 1)
-  line("TABLES", "SEED " .. code4(masterSeed), C_FLOORL)
-  -- this run: the toughest and the quickest level
+-- toughest / quickest level of this run
+local function run_extremes()
   local hard, hardN, easy, easyT = nil, 0, nil, 1e9
   for L, st in pairs(run) do
     if type(L) == "number" then
@@ -1762,23 +1760,110 @@ local function draw_over()
       if st.clear and st.clear < easyT then easy, easyT = L, st.clear end
     end
   end
-  y = y + 2
-  if hard then line("TOUGHEST", "LV " .. hard + 1 .. " " .. run[hard].loss .. "L " .. run[hard].drop .. "D", C_RED) end
-  if easy then line("QUICKEST", "LV " .. easy + 1 .. " " .. string.format("%.1fs", easyT / 60), C_LIME) end
-  -- lifetime (all sessions, from pmem)
-  local runs = math.max(1, pmem(PM_RUNS))
-  y = y + 2
-  line("RUNS", tostring(pmem(PM_RUNS)) .. "  AVG LV " .. string.format("%.1f", pmem(PM_SUMLV) / runs))
-  line("BEST EVER", "LEVEL " .. pmem(PM_BEST))
-  local hardEver, rate = nil, 0
+  return hard, easy, easyT
+end
+
+local function draw_over()
+  -- the art (its per-scanline palettes are switched in by BDR below)
+  memcpy(0, OVER_IMG, SCRBYTES)
+  -- stats panel on the right, clear of the fairy, the moon and the title.
+  -- Only palette slots that are fixed on every scanline are used:
+  -- 0 black, 3 muted, 7 lime, 10 red, 12 gold, 14 lilac, 15 white
+  local px, py, pw, ph = 160, 29, 78, 105
+  rect(px, py, pw, ph, C_KEY)
+  rectb(px, py, pw, ph, C_LILAC)
+  local x, y = px + 4, py + 4
+  local function line(label, val, c)
+    print(label, x, y, C_LILAC, false, 1, true)
+    if val then print(val, x + 30, y, c or C_WHITE, false, 1, true) end
+    y = y + 7
+  end
+  line("SCORE", tostring(score), run.newHi and C_GOLD or C_WHITE)
+  line("LEVEL", tostring(best + 1))
+  line("SEED", code4(masterSeed), C_FLOORL)
+  y = y + 3
+  local hard, easy, easyT = run_extremes()
+  if hard then line("TOUGH", "LV" .. hard + 1 .. " " .. run[hard].loss .. "L " .. run[hard].drop .. "D", C_RED) end
+  if easy then line("QUICK", "LV" .. easy + 1 .. " " .. string.format("%.1fs", easyT / 60), C_LIME) end
+  y = y + 3
+  line("BEST", tostring(pmem(PM_HI)), C_GOLD)
+  line("AVG LV", string.format("%.1f", pmem(PM_SUMLV) / math.max(1, pmem(PM_RUNS))))
+  print("X/Y: STATS", x, y + 1, C_LILAC, false, 1, true)
+  -- continue, at the bottom, blinking
+  if overT > 45 and frame % 40 < 28 then
+    print("CONTINUE", x, py + ph - 24, C_GOLD, false, 1, true)
+  end
+  if overT > 45 then
+    print("D-PAD: SAME", x, py + ph - 16, C_WHITE, false, 1, true)
+    print("A/B: NEW TABLES", x, py + ph - 9, C_WHITE, false, 1, true)
+  end
+end
+
+-- X/Y on the game-over screen: a full page of stats (game palette)
+local function draw_stats()
+  cls(C_KEY)
+  print("STATS", 6, 4, C_GOLD, false, 1, false)
+  print("THIS RUN  SEED " .. code4(masterSeed), 40, 5, C_FLOORL, false, 1, true)
+  -- per level this run: time spent, balls lost, drops back down, clear time
+  local x0, y = 6, 16
+  print("LV  TIME LOST DROP CLEAR", x0, y, C_LILAC, true, 1, true)
+  y = y + 8
+  local levels = {}
+  for L, _ in pairs(run) do if type(L) == "number" then levels[#levels + 1] = L end end
+  table.sort(levels)
+  local first = math.max(1, #levels - 12) -- the last 13 levels fit
+  local hard, easy = run_extremes()
+  for i = first, #levels do
+    local L = levels[i]
+    local st = run[L]
+    local c = L == hard and C_RED or L == easy and C_LIME or C_WHITE
+    print(string.format("%2d %4ds %4d %4d %5s", L + 1, st.t // 60, st.loss, st.drop,
+      st.clear and string.format("%.1fs", st.clear / 60) or "-"), x0, y, c, true, 1, true)
+    y = y + 8
+  end
+  -- lifetime (all sessions)
+  local lx, ly = 140, 16
+  local function life(label, val, c)
+    print(label, lx, ly, C_LILAC, false, 1, true)
+    print(val, lx + 52, ly, c or C_WHITE, false, 1, true)
+    ly = ly + 8
+  end
+  print("ALL TIME", lx, 5, C_GOLD, false, 1, true)
+  local runs = pmem(PM_RUNS)
+  life("RUNS", tostring(runs))
+  life("HIGH SCORE", tostring(pmem(PM_HI)), C_GOLD)
+  life("TOP LEVEL", tostring(pmem(PM_BEST)))
+  life("AVG LEVEL", string.format("%.1f", pmem(PM_SUMLV) / math.max(1, runs)))
+  life("PLAY TIME", string.format("%dm", pmem(PM_SECS) // 60))
+  life("LOST: POO", tostring(pmem(PM_POO)), C_RED)
+  life("LOST: LV1", tostring(pmem(PM_DRAIN)), C_RED)
+  -- the deadliest levels: balls lost per visit
+  ly = ly + 4
+  print("DEADLIEST LEVELS", lx, ly, C_LILAC, false, 1, true)
+  ly = ly + 8
+  local list = {}
   for L = 0, 47 do
     local v = pmem(64 + L)
-    if v >= 2 and pmem(16 + L) / v > rate then hardEver, rate = L, pmem(16 + L) / v end
+    if v >= 1 and pmem(16 + L) > 0 then list[#list + 1] = {L, pmem(16 + L) / v, v} end
   end
-  if hardEver then line("DEADLIEST", string.format("LV %d %.1f/VISIT", hardEver + 1, rate), C_RED) end
-  if overT > 45 and frame % 40 < 30 then
-    print("D-PAD: SAME TABLES", 76, 118, C_LILAC, false, 1, true)
-    print("A/B: NEW TABLES", 76, 126, C_GOLD, false, 1, true)
+  table.sort(list, function(a, b) return a[2] > b[2] end)
+  for i = 1, math.min(4, #list) do
+    print(string.format("LV%-3d %.1f LOST/VISIT", list[i][1] + 1, list[i][2]), lx, ly, C_RED, false, 1, true)
+    ly = ly + 7
+  end
+  if #list == 0 then print("NONE YET", lx, ly, C_FLOORL, false, 1, true) end
+  if frame % 40 < 28 then print("X/Y: BACK", 6, 128, C_GOLD, false, 1, true) end
+end
+
+-- per-scanline palettes for the game-over art (rows 0-143 include the
+-- 4-pixel border above and below the 136-line screen)
+function BDR(row)
+  if state == "over" then
+    local y = row - 4
+    if y < 0 then y = 0 elseif y > 135 then y = 135 end
+    memcpy(0x3FC0, OVER_PAL + y * 48, 48)
+  elseif state == "stats" and row == 0 then
+    memcpy(0x3FC0, GAME_PAL, 48)
   end
 end
 
@@ -1799,6 +1884,7 @@ end
 
 -- ============================ main ============================
 function BOOT()
+  memcpy(GAME_PAL, 0x3FC0, 48) -- keep the game palette (game over swaps it)
   masterSeed = 1
   enter_table(0)
   serve()
@@ -1807,10 +1893,11 @@ end
 
 function TIC()
   update()
-  if state ~= "title" and state ~= "over" then physics() end
+  if state ~= "title" and state ~= "over" and state ~= "stats" then physics() end
   transitions()
   update_fairy()
   if state == "over" then draw_over() return end
+  if state == "stats" then draw_stats() return end
   draw_world()
   draw_hud()
 end
@@ -1832,6 +1919,7 @@ FR = {
   floor = function() return floorIdx end,
   run = function() return run end,
   draw_over = function() draw_over() end,
+  draw_stats = function() draw_stats() end,
   set_balls = function(n) balls = n end,
   tcode = tcode,
   floor = function() return floorIdx end,

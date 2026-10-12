@@ -16,4 +16,5 @@ if "--keep-png" not in sys.argv:
                     os.path.join(HERE, "fairy_ring_sprites.png")], check=True)
 build_tic.main(os.path.join(HERE, "fairy_ring.lua"),
                os.path.join(HERE, "fairy_ring_sprites.png"),
-               os.path.join(HERE, "fairy_ring.tic"))
+               os.path.join(HERE, "fairy_ring.tic"),
+               build_tic.art_chunks(HERE))

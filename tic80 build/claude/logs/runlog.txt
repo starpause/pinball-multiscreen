@@ -3,3 +3,7 @@ SESSION 2026-10-11 14:57
 2026-10-11 14:57 RUNLOG seed=1RBN best=4 score=103960 1:49s/1loss/0drop 2:30s/0loss/7drop 3:14s/2loss/3drop 4:1s/0loss/1drop
 SESSION 2026-10-11 15:13
 2026-10-11 15:13 RUNLOG seed=ZBYB best=3 score=222270 1:83s/3loss/0drop 2:56s/0loss/10drop 3:13s/0loss/8drop
+SESSION 2026-10-12 11:15
+2026-10-12 11:15 RUNLOG seed=3XB3 best=4 score=49300 1:56s/1loss/0drop 2:40s/0loss/13drop 3:21s/2loss/4drop 4:5s/0loss/3drop
+SESSION 2026-10-12 11:52
+2026-10-12 11:52 RUNLOG seed=5NYM best=10 score=766270 1:83s/1loss/0drop 2:110s/0loss/13drop 3:77s/0loss/16drop 4:19s/0loss/6drop 5:16s/0loss/0drop 6:48s/1loss/5drop 7:13s/0loss/2drop 8:19s/0loss/5drop 9:6s/1loss/1drop 10:3s/0loss/1drop

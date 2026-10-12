@@ -45,13 +45,13 @@ macOS / Linux / Git Bash:
 export TIC80=/path/to/tic80
 ```
 
-**Without Python:** run TIC-80 yourself from this folder with its output redirected, and the `RUNLOG` lines end up in the file:
+**Without Python:** run TIC-80 yourself from this folder with the cart as an argument and its output redirected, and the `RUNLOG` lines end up in the file:
 
 ```bash
-tic80 --skip --fs=. "--cmd=load fairy_ring.tic & run" > runlog.txt
+tic80 --skip fairy_ring.tic > runlog.txt
 ```
 
-The game-over screen also shows lifetime stats (runs, best level, deadliest level). TIC-80 saves those in the cart's persistent memory, separately for each place the cart is launched from. So they may start fresh when you launch through `play.py`; the log file is unaffected.
+Passing the cart as an argument (rather than `--fs=`) keeps TIC-80 on its normal settings folder, so your gamepad and key mapping is kept between runs.
 
 ## Build
 
@@ -62,6 +62,19 @@ python build.py
 ```
 
 This regenerates `fairy_ring_sprites.png` from `gen_sprites.py`, then packs everything into `fairy_ring.tic`. If you've hand-edited the PNG, use `python build.py --keep-png` so it isn't regenerated over your changes.
+
+## Game-over art
+
+The game-over screen is a full-screen 240x136 image. TIC-80 shows 16 colours at a time, but the game switches the palette on every scanline, so each row gets 10 colours of its own plus 6 fixed ones (the stats text colours). That keeps full-colour art close to the original. To replace the art, make a 240x136 PNG (any colours), then:
+
+```bash
+python art/import_gameover.py path/to/your-art.png
+python build.py
+```
+
+`art/gameover_preview_x3.png` shows the result. The importer writes `art/gameover_screen.bin` and `art/gameover_pal.bin`, and `build.py` packs them into the cart. Keep the right ~80 px (from x = 160) fairly plain: the stats panel goes there.
+
+`art/gen_gameover.py` holds the earlier painted concepts (`python art/gen_gameover.py`).
 
 ## Tests and bot analytics
 
