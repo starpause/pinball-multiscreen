@@ -1,0 +1,290 @@
+{
+ "ball_rolling_4frames": {
+  "x": 0,
+  "y": 0,
+  "w": 32,
+  "h": 8,
+  "sha1": "66006629faeaca0d7c77dbd1974e62a98fd67808",
+  "tile_id": 0
+ },
+ "sparkle_4frames": {
+  "x": 32,
+  "y": 0,
+  "w": 32,
+  "h": 8,
+  "sha1": "7473aadd455cb672d51e7769d9229f163571ad72",
+  "tile_id": 4
+ },
+ "firefly_decor": {
+  "x": 64,
+  "y": 0,
+  "w": 8,
+  "h": 8,
+  "sha1": "e57449bf2ecd933b5e656e179dcaf623c0ab7efa",
+  "tile_id": 8
+ },
+ "tiny_mushroom": {
+  "x": 72,
+  "y": 0,
+  "w": 8,
+  "h": 8,
+  "sha1": "84108fe95568ccfe1d0939b6674c3f8209192581",
+  "tile_id": 9
+ },
+ "lane_bud_unlit_lit": {
+  "x": 80,
+  "y": 0,
+  "w": 16,
+  "h": 8,
+  "sha1": "8dfdfa6d83c1c2e71eda4b3929de492f64c99b24",
+  "tile_id": 10
+ },
+ "kickback_arrow_unlit_lit": {
+  "x": 96,
+  "y": 0,
+  "w": 16,
+  "h": 8,
+  "sha1": "506ce78c37ccbc455da05cbc156bf21ad79529c3",
+  "tile_id": 12
+ },
+ "decor_flower": {
+  "x": 112,
+  "y": 0,
+  "w": 8,
+  "h": 8,
+  "sha1": "ef12beb0a65bac98412798ca51df4f42b5c2f65b",
+  "tile_id": 14
+ },
+ "decor_clover": {
+  "x": 120,
+  "y": 0,
+  "w": 8,
+  "h": 8,
+  "sha1": "ed5f4a8c5bdd9dc952196146ec5b57bbe64d2b93",
+  "tile_id": 15
+ },
+ "texture_wall_rim_rows": {
+  "x": 0,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "04bb38695c987b412df64a9c645bd825ac9d8920",
+  "tile_id": 16
+ },
+ "texture_sling": {
+  "x": 8,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "81d41fdddaa72f2743551b8ea8c258afe693744c",
+  "tile_id": 17
+ },
+ "texture_post": {
+  "x": 16,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "aceb137b9c9e1a4f4e00906c105ab6a7639a1f89",
+  "tile_id": 18
+ },
+ "texture_gate": {
+  "x": 24,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "9427928d1242f72447ac88c92d41cc0fc8aaea3a",
+  "tile_id": 19
+ },
+ "decor_grass": {
+  "x": 64,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "6877b30c4e1fd5d50653a56efeb5f65fe74649e9",
+  "tile_id": 24
+ },
+ "decor_fern": {
+  "x": 72,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "214af765e19cc3e84611ec8360fb0c7db091e8f8",
+  "tile_id": 25
+ },
+ "decor_stones": {
+  "x": 80,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "6bc866aed8f4a3240c40da2e24ae4e8bdc1784ab",
+  "tile_id": 26
+ },
+ "decor_star": {
+  "x": 88,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "bcc9ccfd7061001c289a11bbe761918c12b5be3d",
+  "tile_id": 27
+ },
+ "updraft_arrow": {
+  "x": 96,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "4e6a6e6cdfd9ec653c63f311678aa8b5e32586d7",
+  "tile_id": 28
+ },
+ "blocker_post_unlit_lit": {
+  "x": 104,
+  "y": 8,
+  "w": 16,
+  "h": 8,
+  "sha1": "bcb80b7250595227d90abff477ef9861f66dd323",
+  "tile_id": 29
+ },
+ "mushroom_small": {
+  "x": 120,
+  "y": 8,
+  "w": 8,
+  "h": 8,
+  "sha1": "652719406af549c7d8b627519c9e575b87106512",
+  "tile_id": 31
+ },
+ "bumper_red_normal_hit": {
+  "x": 0,
+  "y": 16,
+  "w": 32,
+  "h": 16,
+  "sha1": "fd04acad1030b80c482f9a57826ad0cf2966c7a3",
+  "tile_id": 32
+ },
+ "mushroom_big_colony": {
+  "x": 32,
+  "y": 16,
+  "w": 16,
+  "h": 16,
+  "sha1": "b4a40ba163f5b81734a7fe344ac65403f30ffd37",
+  "tile_id": 36
+ },
+ "fairy_flutter_2frames": {
+  "x": 64,
+  "y": 16,
+  "w": 32,
+  "h": 16,
+  "sha1": "98c166a42e6d48cf4dec23d25f6c6d94c1e52b79",
+  "tile_id": 40
+ },
+ "fairy_ring_portal_2frames": {
+  "x": 96,
+  "y": 16,
+  "w": 32,
+  "h": 16,
+  "sha1": "24b49f4eeeaf87c2bc635c6463ef8c7361547779",
+  "tile_id": 44
+ },
+ "texture_floor_16": {
+  "x": 0,
+  "y": 32,
+  "w": 16,
+  "h": 16,
+  "sha1": "c3262e184d717d1110c958a7ddddb0ced037c5c1",
+  "tile_id": 64
+ },
+ "texture_bark_16": {
+  "x": 16,
+  "y": 32,
+  "w": 16,
+  "h": 16,
+  "sha1": "dcf243fda45a5ca50fb146646553d7adf984f409",
+  "tile_id": 66
+ },
+ "decor_big_toadstool": {
+  "x": 32,
+  "y": 32,
+  "w": 16,
+  "h": 16,
+  "sha1": "bc3208dcfb63272531e7d234a65e44a80aa4b1c9",
+  "tile_id": 68
+ },
+ "decor_mushroom_cluster": {
+  "x": 48,
+  "y": 32,
+  "w": 16,
+  "h": 16,
+  "sha1": "3a293c957b97779de62940aa96d3b5ebe76a39f3",
+  "tile_id": 70
+ },
+ "acorn_3_damage_frames": {
+  "x": 32,
+  "y": 48,
+  "w": 48,
+  "h": 16,
+  "sha1": "2351c4b9bdd46b46bbf181379c6c79ad2cd24095",
+  "tile_id": 100
+ },
+ "bumper_gold_normal_hit": {
+  "x": 80,
+  "y": 48,
+  "w": 32,
+  "h": 16,
+  "sha1": "8de3f8b89ae399daf11efb8a732bd775b0f20a14",
+  "tile_id": 106
+ },
+ "spore_unlit_lit": {
+  "x": 112,
+  "y": 48,
+  "w": 16,
+  "h": 8,
+  "sha1": "008063155de510d86298fe2f0b367bead125de72",
+  "tile_id": 110
+ },
+ "poo_pile_normal_splat": {
+  "x": 112,
+  "y": 56,
+  "w": 16,
+  "h": 8,
+  "sha1": "d6f692a711549e08d0b8704d1e6359ba0b29af59",
+  "tile_id": 126
+ },
+ "pixie_2frames": {
+  "x": 0,
+  "y": 64,
+  "w": 32,
+  "h": 16,
+  "sha1": "a13774f8e1c051075c436fd42e2d658687172aba",
+  "tile_id": 128
+ },
+ "wishing_well_idle_spin": {
+  "x": 64,
+  "y": 64,
+  "w": 32,
+  "h": 16,
+  "sha1": "4d2624fdd04eb72e1e9f453c4a4b0ea2ce16fc20",
+  "tile_id": 136
+ },
+ "flippers_8_angles_32x24": {
+  "x": 0,
+  "y": 128,
+  "w": 128,
+  "h": 48,
+  "sha1": "3f4130f23e309e500055d64523949c942bb44efd",
+  "tile_id": 256
+ },
+ "queen_red_lg_32": {
+  "x": 0,
+  "y": 176,
+  "w": 32,
+  "h": 32,
+  "sha1": "0d9637b914c78834787affc34657948a24c75d83",
+  "tile_id": 352
+ },
+ "queen_red_md_24": {
+  "x": 32,
+  "y": 176,
+  "w": 24,
+  "h": 24,
+  "sha1": "143958e07dae4a07a33a96a81deff665739e572f",
+  "tile_id": 356
+ }
+}

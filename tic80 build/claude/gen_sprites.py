@@ -625,6 +625,28 @@ SPORE = """
 put_tile(SPORE, 110)
 put_tile(remap(SPORE, {"3": "d", "e": "f"}), 111)
 
+# 136/138: wishing well (roulette: extra ball, saver, multiball...), idle / spinning
+WELL = """
+................
+...1111111111...
+..199999999991..
+.19888888888891.
+..111111111111..
+...1........1...
+...1........1...
+..111111111111..
+.1eeeeeeeeeeee1.
+.1e3dddddddd3e1.
+.1e3dddfdddd3e1.
+.1eeeeeeeeeeee1.
+.1e3e3e3e3e3ee1.
+.1eeeeeeeeeeee1.
+..111111111111..
+................
+"""
+put(WELL, *tile_xy(136))
+put(remap(WELL, {"d": "c", "f": "f", "3": "9"}), *tile_xy(138))
+
 # 28: updraft wind arrow, 29: blocker post (small mushroom), 30: lit post
 put_tile("""
 ...dd...
@@ -851,11 +873,81 @@ def blit(img, x0, y0):
                 sheet[y0 + y][x0 + x] = c
 
 
-# sprite bank (ids 256+): 32x32 big fairy at (0,176) = id 352,
+def beetle_girl_32():
+    half = [
+        '......11........',
+        '.....1ca1.......',
+        '......11........',
+        '.......11.......',
+        '........1.......',
+        '......1111111111',
+        '....112222332222',
+        '..11222222222222',
+        '.1aa122222222222',
+        '1caa122112222111',
+        '11aa121221121111',
+        '.111111221111111',
+        '111...1fffffffff',
+        '1be1.111111fffff',
+        '1bde1ffb1f11ffff',
+        '.1be11111aa1fffb',
+        '..111..1b1a1ffff',
+        '...11be111111111',
+        '..1bbeee1aaa1111',
+        '.1bbeeee111aa1cc',
+        '.1bfeee11881aaaa',
+        '..1beee118818aaa',
+        '...1111118188aaa',
+        '......11111fffff',
+        '........11111111',
+        '..........1111..',
+        '..........1121..',
+        '.........11aa1..',
+        '.........1aca1..',
+        '.........1aaaa1.',
+        '.........111111.',
+        '................',
+    ]
+    rows = [h + h[::-1] for h in half]
+    return [[int(c, 16) if c != '.' else 0 for c in r] for r in rows]
+
+
+def beetle_girl_24():
+    half = [
+        '....11......',
+        '....1ca1....',
+        '.....11.....',
+        '......1.....',
+        '....11111111',
+        '..1122232222',
+        '.1aa12222222',
+        '1caa12211211',
+        '.11111122111',
+        '1be1.1ffffff',
+        '1bde1ff11fff',
+        '.1be11aa1ffb',
+        '..111..11fff',
+        '.1be11aaa11c',
+        '1bfe1188aaaa',
+        '.1be118188aa',
+        '..111111ffff',
+        '......111111',
+        '........111.',
+        '.......11aa1',
+        '.......1aca1',
+        '.......11111',
+        '............',
+        '............',
+    ]
+    rows = [h + h[::-1] for h in half]
+    return [[int(c, 16) if c != '.' else 0 for c in r] for r in rows]
+
+
+# sprite bank (ids 256+): 32x32 beetle girl boss at (0,176) = id 352,
 # 24x24 medium at (32,176) = id 356, 64x64 game-over scene at (64,176) = id 360
-BIG_FAIRY = chibi_fairy(32, 32)
+BIG_FAIRY = beetle_girl_32()
 blit(BIG_FAIRY, 0, 176)
-blit(chibi_fairy(24, 24), 32, 176)
+blit(beetle_girl_24(), 32, 176)
 
 
 def game_over_scene():

@@ -69,9 +69,15 @@ Completing every goal on a table once gives **TABLE CLEAR** (+10,000).
 - **Bumpers:** red (100 points) and gold (500).
 - **Yellow pixies:** drift side to side, kick the ball, burst into dust (300 points) and regrow after 6 s.
 - **Fairy rings:** hold the ball, pay 2,500, then eject it toward the flippers.
-- **Beetles:** catch the ball and throw it hard up the table, often all the way to the next one.
+- **Fairy rings are aimable launchers:**
+  - After a ring catches the ball, a single LED circles it. A **silver** lap fires at normal power, enough to reach the next level; the next **gold** lap fires at full power.
+  - Press any flipper button to fire in the LED's direction. It only fires on a fresh press, so a held flipper won't trigger it.
+  - If nobody fires within 4 laps, the ball drops gently toward the flippers.
+- **Wishing wells** (replace the beetle, which could loop forever):
+  - The ball drops in and a roulette spins. The wish is one of: **EXTRA BALL** (up to 5), **BALL SAVER** (20 s), **KICKBACKS**, **MULTIBALL** (level 3 and up), or **POINTS**.
+  - Then the well drops the ball *down* toward the flippers.
 
-Rings and beetles are "catchers": at most 2 per table, at least 36 px apart, and all of them ignore the ball for 1–1.5 s after an eject.
+Rings and wells are "catchers": at most 2 per table, at least 36 px apart, and all of them ignore the ball for a moment after releasing it.
 
 **Sparkles** appear only when you score, and bigger scores make more of them. Breaking things (pixies, mushrooms, acorns) gives off dust instead.
 
@@ -120,8 +126,12 @@ Players see **LEVEL n** (level 1 is the bottom of the tower) and a dim **table c
 - on level 1, both kickbacks lit.
 
 **Fairy levels (10, 20, 30 …):**
-- The companion fairy lands in the middle. Each of the 2 side fairy rings scores 5,000 and makes her grow: small → medium → big → glowing.
-- Hitting her scores along the way. Hitting the glowing big fairy gives a **blessing**:
+- The companion fairy lands in the middle. Each of the 2 side fairy rings scores 5,000 and makes her grow: small → medium → big.
+- Fully grown, she becomes the **Fairy Queen** boss:
+  - she has **5 hearts** and drifts side to side;
+  - 2 pixie guards sweep back and forth across the top;
+  - each hit costs her a heart and scores.
+- At 0 hearts she bursts into fairy dust and gives a **blessing**:
   - a jackpot;
   - +1 ball (up to 5);
   - that level becomes a **protected checkpoint**: every level at or below it keeps its drain and outlanes posted (Infinity's BlockedLevel).

@@ -21,7 +21,7 @@ local function bot_pad(b, t)
   return p
 end
 
-local KINDS = {"bumper", "gold", "pixie", "hole", "beetle", "acorn", "shroom", "bud"}
+local KINDS = {"bumper", "gold", "pixie", "hole", "well", "acorn", "shroom", "bud"}
 
 function BOOT()
   realBOOT()

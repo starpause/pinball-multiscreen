@@ -191,14 +191,14 @@ local TOY = {
   gold    = {r = 6, m = 14, notc = true, kicker = true}, -- score bumper
   pixie   = {r = 5, m = 16, travel = 14, kicker = true}, -- moving; bursts
   hole    = {r = 4, m = 12, notc = true},   -- fairy ring: hold + eject
-  beetle  = {r = 5, m = 14, notc = true},   -- catches the ball, tosses it up
+  well    = {r = 5, m = 14, notc = true},   -- wishing well: roulette, ejects down
   acorn   = {r = 5, m = 13},                -- bash toy (3 hits)
   shroom  = {r = 6, m = 24, clear = 16},    -- mushroom colony (big stage)
   small   = {r = 3, m = 0},                 -- colony stage 2 (spawned)
   spore   = {r = 0, m = 0},                 -- colony stage 3 rollover (spawned)
   bud     = {r = 0, m = 7},                 -- rollover sensor (groups of 3)
 }
-local CATCHER = {hole = true, beetle = true} -- capture the ball
+local CATCHER = {hole = true, well = true} -- capture the ball
 
 -- goal definitions: trigger -> reward (Infinity's event model)
 local TRIGGERS = {  -- weight = Infinity trigger chance %
@@ -293,7 +293,7 @@ local function spot_ok(t, x, y, def, extra)
       if not cmap_clear(x + dx, y, def.r + BR + 2) then return false end
     end
   end
-  local ring = def == TOY.hole or def == TOY.beetle
+  local ring = def == TOY.hole or def == TOY.well
   if ring then
     local rings = 0
     for _, o in ipairs(t.objs) do if CATCHER[o.kind] then rings = rings + 1 end end
@@ -424,15 +424,15 @@ local function generate(idx)
   if t.brackets then paint_table(t) end -- brackets are walls too
 
   if t.bonus then
-    -- the fairy level: our companion fairy lands in the middle. Each side
-    -- fairy ring makes her grow (3 rings: small -> medium -> big -> glowing);
-    -- hitting the glowing big fairy grants a blessing: jackpot, extra ball,
-    -- and this level becomes a protected checkpoint (Infinity's level 10)
-    t.queen = {x = CX, y = 44, stage = 0, cool = 0, flash = 0}
+    -- the beetle girl boss level: fought as a boss right on stage (5 hits).
+    -- hitting her damages her; side beetle rings launch the ball up at her;
+    -- defeating her grants jackpot, extra ball, and sets a protected checkpoint (Infinity's level 10)
+    t.queen = {x = CX, y = 44, stage = 3, hp = 5, cool = 0, flash = 0}
     add_obj(t, "hole", CX - 46, 62, {queenRing = true})
     add_obj(t, "hole", CX + 46, 62, {queenRing = true})
-    add_obj(t, "pixie", CX - 30, 20)
-    add_obj(t, "pixie", CX + 30, 20)
+    -- two pixie guards sweep back and forth across the top
+    add_obj(t, "pixie", CX, 18, {travel = 42})
+    add_obj(t, "pixie", CX, 26, {travel = 42, phase = 190})
     return t
   end
 
@@ -477,7 +477,7 @@ local function generate(idx)
   local cap = gentle and 3 or 4 + rng.int(4)
   local creators = {{"bumper", 85}, {"pixie", 65}, {"pixie", 65},
                     {"gold", 35}, {"hole", 15}}
-  if not gentle then creators[#creators + 1] = {"beetle", 10} end
+  if not gentle then creators[#creators + 1] = {"well", 12} end
   local placed = 0
   for _ = 1, 20 do
     if placed >= cap then break end
@@ -724,6 +724,8 @@ local frame = 0
 local touching, lastNx, lastNy = false, 0, 0
 local lflip, rflip = false, false
 local lostRespawn = "floor" -- where a lost ball comes back: "floor" or "here"
+local aimT, aimArmed = 0, false
+local AIM_SPEED = 0.07      -- radians per frame (a lap is ~1.5 s)
 local overT = 0
 -- per-run analytics, shown on the game-over screen and saved to pmem
 local run = {}
@@ -982,7 +984,7 @@ local function sensors()
       o.inside = inside
     elseif CATCHER[o.kind] and ball == mainBall then
       local d = math.sqrt((ball.x - o.x)^2 + (ball.y - o.y)^2)
-      local reach = o.kind == "beetle" and o.r + BR - 1 or o.r
+      local reach = o.kind == "well" and o.r + BR - 1 or o.r
       if d < reach and not o.inside and (cur.holeCool or 0) <= 0 then
         o.inside = true
         ball.caps = (ball.caps or 0) + 1
@@ -990,16 +992,23 @@ local function sensors()
         -- is playing itself (tests count these as LOOPS)
         if ball.flipSince == false then ball.selfCaps = (ball.selfCaps or 0) + 1 end
         ball.flipSince = false
-        add(o.kind == "beetle" and 1000 or o.queenRing and 5000 or 2500, o.x, o.y)
-        say(o.kind == "beetle" and "BEETLE TOSS!" or "FAIRY RING")
+        add(o.kind == "well" and 1000 or o.queenRing and 5000 or 2500, o.x, o.y)
+        say(o.kind == "well" and "WISHING WELL..." or o.queenRing and "BEETLE RING" or "AIM AND FLIP!")
         local q = cur.queen
         if o.queenRing and q and not q.gone and q.stage < 3 then
           q.stage = q.stage + 1
           q.flash = 20
-          say(q.stage == 3 and "SHE GLOWS! HIT HER!" or "THE FAIRY GROWS!", 150)
+          if q.stage == 3 then q.hp = 5 end
+          say(q.stage == 3 and "BEETLE BOSS! 5 HITS!" or "BEETLE RING!", 150)
         end
         o.flash = 30
-        capture(o, o.kind == "beetle" and 30 or 60)
+        if o.kind == "hole" and not o.queenRing then
+          -- aimable launcher: an LED circles the ring, flip to fire that way
+          ball.x, ball.y, ball.vx, ball.vy = o.x, o.y, 0, 0
+          state, holdObj, aimT, aimArmed = "aim", o, 0, false
+        else
+          capture(o, o.kind == "well" and 100 or 60)
+        end
         return
       end
       if d > reach + 5 then o.inside = false end
@@ -1071,7 +1080,7 @@ local function physics()
     o.cool, o.flash = o.cool - 1, o.flash - 1
     if o.kind == "pixie" then
       o.phase = o.phase + 1
-      o.x = o.x0 + math.sin(o.phase / 60) * TOY.pixie.travel
+      o.x = o.x0 + math.sin(o.phase / 60) * (o.travel or TOY.pixie.travel)
     end
     if o.respawn then
       o.respawn = o.respawn - 1
@@ -1088,7 +1097,7 @@ local function physics()
     end
   end
   if state == "play" then step_ball() end
-  if state == "play" or state == "hold" then
+  if state == "play" or state == "hold" or state == "aim" then
     for _, e in ipairs(extras) do ball = e step_ball() end
     ball = mainBall
   end
@@ -1184,14 +1193,23 @@ step_ball = function()
         if q.cool <= 0 then
           q.cool, q.flash = 12, 10
           if q.stage >= 3 then
-            -- the blessing
-            add(50000 * (cur.idx // 10 + 1), q.x, q.y)
-            sparkle(q.x, q.y, 10, true)
-            balls = math.min(5, balls + 1)
-            floorIdx = math.max(floorIdx, cur.idx)
-            q.gone = true
-            say("BLESSED! CHECKPOINT", 180)
-            shake = 10
+            q.hp = (q.hp or 5) - 1
+            q.cool, q.flash = 25, 14
+            add(5000 * (cur.idx // 10 + 1), q.x, q.y)
+            sparkle(q.x, q.y, 6, true)
+            shake = 4
+            if q.hp <= 0 then
+              -- defeated: she bursts into fairy dust and blesses you
+              add(50000 * (cur.idx // 10 + 1), q.x, q.y)
+              for k = 1, 4 do sparkle(q.x + (k - 2.5) * 6, q.y, 10, true) end
+              balls = math.min(5, balls + 1)
+              floorIdx = math.max(floorIdx, cur.idx)
+              q.gone = true
+              say("BEETLE BOSS DEFEATED! +1 BALL, CHECKPOINT", 200)
+              shake = 14
+            else
+              say("BEETLE BOSS: " .. q.hp .. " HITS LEFT", 90)
+            end
           else
             add(2000 * (q.stage + 1), q.x, q.y)
           end
@@ -1266,11 +1284,14 @@ local function transitions()
     enter_table(nxt)
     ball.y = ball.y + WH
     ball.noflip, ball.above = true, false
+    ball.vy = math.min(ball.vy, LAUNCH_VY - 0.3)        -- always arrive with momentum
+    ball.vx = math.max(-1.2, math.min(1.2, ball.vx))
+    lvstat(nxt).arrived = lvstat(nxt).t                 -- for bounce-back stats
     if fresh then -- a new level: score + a burst of sparkles at the ball
       add(1000 * nxt, ball.x, ball.y - 6)
       sparkle(ball.x, ball.y - 6, 6)
     end
-    say(cur.bonus and ("FAIRY LEVEL " .. nxt + 1) or ("LEVEL " .. nxt + 1))
+    say(cur.bonus and ("BEETLE BOSS LEVEL " .. nxt + 1) or ("LEVEL " .. nxt + 1))
   elseif ball.y > WH + 6 then -- out of the bottom
     if cur.idx <= floorIdx then
       if saver > 0 then
@@ -1284,7 +1305,11 @@ local function transitions()
       end
     else
       end_multiball()
-      lvstat(cur.idx).drop = lvstat(cur.idx).drop + 1
+      local ls = lvstat(cur.idx)
+      ls.drop = ls.drop + 1
+      if ls.arrived and ls.t - ls.arrived < 240 then ls.bb = (ls.bb or 0) + 1
+      elseif ball.px > 45 and ball.px < 105 then ls.dc = (ls.dc or 0) + 1
+      else ls.dout = (ls.dout or 0) + 1 end
       enter_table(cur.idx - 1)
       ball.y = ball.y - WH
       ball.vx, ball.vy = ball.vx * 0.5, ball.vy * 0.1 -- Infinity's softened drop
@@ -1325,7 +1350,10 @@ game_over = function()
   local lv = {}
   for L = 0, best do
     local st = run[L]
-    if st then lv[#lv + 1] = string.format("%d:%ds/%dloss/%ddrop", L + 1, st.t // 60, st.loss, st.drop) end
+    if st then
+      lv[#lv + 1] = string.format("%d:%ds/%dloss/%ddrop(%dbb,%dc,%do)/%s", L + 1, st.t // 60, st.loss,
+        st.drop, st.bb or 0, st.dc or 0, st.dout or 0, tcode(L))
+    end
   end
   trace(string.format("RUNLOG seed=%s best=%d score=%d %s", code4(masterSeed), best + 1, score,
     table.concat(lv, " ")))
@@ -1364,8 +1392,13 @@ local function update()
   end
   if state == "play" then lvstat(cur.idx).t = lvstat(cur.idx).t + 1 end
   for _, p in ipairs(cur.poo) do if p.off > 0 then p.off = p.off - 1 end end
-  if cur.queen and cur.queen.cool > 0 then
-    cur.queen.cool, cur.queen.flash = cur.queen.cool - 1, cur.queen.flash - 1
+  local q = cur.queen
+  if q then
+    if q.cool > 0 then q.cool, q.flash = q.cool - 1, q.flash - 1 end
+    if q.stage >= 3 and not q.gone and state == "play" then
+      q.t = (q.t or 0) + 1
+      q.x = CX + math.sin(q.t / 50) * 24
+    end
   end
   if cur.posts > 0 then cur.posts = cur.posts - 1 end
   if (cur.holeCool or 0) > 0 then cur.holeCool = cur.holeCool - 1 end
@@ -1384,6 +1417,25 @@ local function update()
       ball.vx = (frame % 7 - 3) * 0.1
       if saver == 0 then saver = 20 * 60 end -- Pokemon Pinball's 20 s
     end
+  elseif state == "aim" then
+    -- the LED goes round: silver lap = normal launch, gold lap = full power
+    aimT = aimT + 1
+    local held = leftHeld() or rightHeld()
+    if not held then aimArmed = true end
+    local lap = (aimT * AIM_SPEED) // (2 * math.pi)
+    if (aimArmed and held) or lap >= 4 then
+      local a = -math.pi / 2 + aimT * AIM_SPEED
+      local power = lap % 2 == 1 and 4.8 or 3.4
+      ball.vx, ball.vy = math.cos(a) * power, math.sin(a) * power
+      if not (aimArmed and held) then
+        -- nobody fired: drop it gently toward the flippers (never back in)
+        ball.vx, ball.vy = (CX - ball.x) * 0.02, 1.2
+      end
+      ball.noflip, ball.above = false, true
+      state = "play"
+      cur.holeCool = 45
+      sparkle(ball.x, ball.y, lap % 2 == 1 and 6 or 3)
+    end
   elseif state == "hold" then
     holdT = holdT - 1
     if holdT <= 0 then
@@ -1393,10 +1445,28 @@ local function update()
         local side = o.x < CX and 1 or -1
         ball.vx, ball.vy = 1.3 * side, -2.6
         cur.holeCool = 60
-      elseif o.kind == "beetle" then
-        -- the beetle flings the ball hard up the table
-        ball.vx, ball.vy = ((frame % 5) - 2) * 0.35, -4.8
-        cur.holeCool = 60
+      elseif o.kind == "well" then
+        -- the wish comes true, then the well drops the ball toward the flippers
+        local wishes = {{"EXTRA BALL", 12}, {"BALL SAVER", 22}, {"KICKBACKS", 20}, {"POINTS", 32}}
+        if cur.idx >= 2 then wishes[#wishes + 1] = {"MULTIBALL", 14} end
+        local tot = 0
+        for _, w in ipairs(wishes) do tot = tot + w[2] end
+        local r, wish = math.random() * tot, wishes[1][1]
+        for _, w in ipairs(wishes) do
+          if r < w[2] then wish = w[1] break end
+          r = r - w[2]
+        end
+        if wish == "EXTRA BALL" then balls = math.min(5, balls + 1)
+        elseif wish == "BALL SAVER" then saver = 20 * 60
+        elseif wish == "KICKBACKS" then cur.kick[1], cur.kick[2] = true, true
+        elseif wish == "MULTIBALL" then grant_reward("MULTIBALL")
+        else add(5000 * (cur.idx + 1), o.x, o.y) end
+        say("WISH: " .. wish .. "!", 150)
+        sparkle(o.x, o.y, 8)
+        local side = o.x < CX and 1 or -1
+        ball.vx, ball.vy = 1.2 * side, 1.0
+        cur.holeCool = 90
+        run.wishes = (run.wishes or 0) + 1
       else
         local side = o.x < CX and 1 or -1
         ball.vx, ball.vy = 1.6 * side, 1.6 -- eject down toward the flippers
@@ -1587,8 +1657,9 @@ local function draw_world()
       if o.alive then spr(31, x - 4, y - 4, 0) end
     elseif o.kind == "spore" then
       spr(o.lit and 111 or 110, x - 4, y - 4, 0)
-    elseif o.kind == "beetle" then
-      spr(o.flash > 0 and 134 or 132, x - 8, y - 8, 0, 1, 0, 0, 2, 2)
+    elseif o.kind == "well" then
+      local spin = state == "hold" and holdObj == o
+      spr(spin and (frame // 4) % 2 == 0 and 138 or 136, x - 8, y - 9, 0, 1, 0, 0, 2, 2)
     elseif o.kind == "acorn" then
       if o.alive then spr(100 + math.min(2, o.hits) * 2, x - 8, y - 7, 0, 1, 0, 0, 2, 2) end
     elseif o.kind == "bud" then
@@ -1621,25 +1692,38 @@ local function draw_world()
     end
   end
   for _, f in ipairs(cur.flippers) do draw_flipper(f) end
+  if state == "aim" and holdObj then
+    -- the launcher LED: silver lap = normal, gold lap = full power
+    local lap = (aimT * AIM_SPEED) // (2 * math.pi)
+    local c = lap % 2 == 1 and C_GOLD or C_WHITE
+    for k = 0, 2 do
+      local a = -math.pi / 2 + (aimT - k * 3) * AIM_SPEED
+      local px, py = holdObj.x + math.cos(a) * 9, holdObj.y + math.sin(a) * 9
+      if k == 0 then circ(px + sx, py, 1, c) else pix(px + sx, py, k == 1 and c or C_LILAC) end
+    end
+  end
   for _, p in ipairs(cur.poo) do
     local guarded = (p.x == CX and (cur.center > 0 or protected())) or (p.x ~= CX and protected())
     if not guarded then spr(p.off > 0 and 127 or 126, p.x - 4 + sx, p.y - 5, 0) end
   end
   local q = cur.queen
   if q and not q.gone then
-    fairy_colors()
     local bob = math.sin(frame / 18) * 1.5
     if q.stage >= 3 then
       circb(q.x + sx, q.y + bob, 15 + (frame // 5) % 3, (frame // 5) % 2 == 0 and C_GOLD or C_WHITE)
     end
-    if q.flash > 0 and frame % 4 < 2 then palswap(C_FLOORL, C_WHITE) end
-    if q.stage == 0 then
-      spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob, 0, 1, 0, 0, 2, 2)
-    elseif q.stage == 1 then
-      spr(356, q.x - 12 + sx, q.y - 12 + bob, 0, 1, 0, 0, 3, 3)
-    else
-      spr(352, q.x - 16 + sx, q.y - 16 + bob, 0, 1, 0, 0, 4, 4)
+    if q.flash > 0 and frame % 4 < 2 then
+      palswap(C_RED, C_WHITE) palswap(C_PINK, C_WHITE) palswap(C_GOLD, C_WHITE)
     end
+    if q.stage >= 3 and q.hp then
+      for i = 1, q.hp do
+        local hx, hy = q.x - 12 + (i - 1) * 6 + sx, q.y - 24 + bob
+        pix(hx, hy, C_RED) pix(hx + 2, hy, C_RED)
+        line(hx - 1, hy + 1, hx + 3, hy + 1, C_RED) line(hx, hy + 2, hx + 2, hy + 2, C_RED)
+        pix(hx + 1, hy + 3, C_RED)
+      end
+    end
+    spr(352, q.x - 16 + sx, q.y - 16 + bob, 0, 1, 0, 0, 4, 4)
     palreset()
   end
 
@@ -1650,7 +1734,7 @@ local function draw_world()
   if not ball.dx or not slow then ball.dx, ball.dy = ball.x, ball.y
   else ball.dx, ball.dy = ball.dx + (ball.x - ball.dx) * 0.25, ball.dy + (ball.y - ball.dy) * 0.25 end
   local bx, by = (ball.dx + 0.5) // 1 + sx, (ball.dy + 0.5) // 1
-  if state ~= "lost" and not (state == "hold" and holdT % 6 < 3) then
+  if state ~= "lost" and not (state == "hold" and holdT % 6 < 3) and not (state == "aim" and frame % 8 < 3) then
     spr((ball.rot // 64) % 4, bx - 4, by - 4, 0)
   end
   for _, p in ipairs(parts) do
@@ -1703,11 +1787,11 @@ local function draw_hud()
       print("BLESSED!", hx, y, C_LIME, false, 1, true)
       print(">CLIMB ON", hx + 4, y + 7, C_LIME, false, 1, true)
     elseif q.stage < 3 then
-      print("RINGS " .. q.stage .. "/3", hx, y, C_WHITE, false, 1, true)
-      print(">GROW THE FAIRY", hx + 4, y + 7, C_GOLD, false, 1, true)
+      print("BEETLE BOSS", hx, y, C_WHITE, false, 1, true)
+      print(">AIM AND HIT", hx + 4, y + 7, C_GOLD, false, 1, true)
     else
-      print("SHE GLOWS!", hx, y, C_GOLD, false, 1, true)
-      print(">HIT HER: BLESSING", hx + 4, y + 7, C_GOLD, false, 1, true)
+      print("BEETLE BOSS " .. (q.hp or 5) .. "/5", hx, y, C_GOLD, false, 1, true)
+      print(">DEFEAT BOSS", hx + 4, y + 7, C_GOLD, false, 1, true)
     end
   elseif #cur.events == 0 then
     print("CLIMB!", hx, y, C_LILAC, false, 1, true)
@@ -1810,10 +1894,11 @@ local function draw_stats()
   y = y + 8
   local levels = {}
   for L, _ in pairs(run) do if type(L) == "number" then levels[#levels + 1] = L end end
-  table.sort(levels)
-  local first = math.max(1, #levels - 12) -- the last 13 levels fit
+  -- longest first: players remember where they spent a lot of time
+  table.sort(levels, function(a, b) return run[a].t > run[b].t end)
+  local first, last = 1, math.min(#levels, 13)
   local hard, easy = run_extremes()
-  for i = first, #levels do
+  for i = first, last do
     local L = levels[i]
     local st = run[L]
     local c = L == hard and C_RED or L == easy and C_LIME or C_WHITE
@@ -1921,6 +2006,7 @@ FR = {
   draw_over = function() draw_over() end,
   draw_stats = function() draw_stats() end,
   set_balls = function(n) balls = n end,
+  aim = function() return aimT, aimArmed end,
   tcode = tcode,
   floor = function() return floorIdx end,
   tic_draw = function() update_fairy() draw_world() draw_hud() end,

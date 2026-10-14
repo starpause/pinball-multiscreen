@@ -82,7 +82,7 @@ def summarize(rows):
         print(table_line("%d-%d toys" % (k, k + 2), by[k]))
 
     print("\n== effect of each toy (tables with vs without, non-bonus)")
-    for kind in ("bumper", "gold", "pixie", "hole", "beetle", "acorn", "shroom", "bud"):
+    for kind in ("bumper", "gold", "pixie", "hole", "well", "acorn", "shroom", "bud"):
         w = [r for r in plain if int(r["n_" + kind]) > 0]
         wo = [r for r in plain if int(r["n_" + kind]) == 0]
         if w and wo:

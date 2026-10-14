@@ -234,28 +234,52 @@ function BOOT()
     trace(string.format("multiball: spawned %d extras, all resolved after %s frames, state %s %s", n0,
       tostring(gone), FR.get(), n0 == 2 and "ok" or "PROBLEM"))
   end
-  -- beetle: catches and throws the ball up
+  -- wishing well: catches the ball, grants a wish, drops it toward the flippers
   do
     FR.new_game(7)
     local ti = find_table(function(t)
-      for _, o in ipairs(t.objs) do if o.kind == "beetle" then return true end end
+      for _, o in ipairs(t.objs) do if o.kind == "well" then return true end end
     end)
     if ti then
       FR.enter(ti) FR.force_state("play")
-      local bt
-      for _, o in ipairs(FR.cur().objs) do if o.kind == "beetle" then bt = o end end
-      b.x, b.y, b.vx, b.vy, b.noflip = bt.x, bt.y - 12, 0, 1.0, false
-      local held, minY, climbed = false, 999, false
-      for i = 1, 140 do
+      local w
+      for _, o in ipairs(FR.cur().objs) do if o.kind == "well" then w = o end end
+      FR.set_balls(2)
+      b.x, b.y, b.vx, b.vy, b.noflip = w.x, w.y - 12, 0, 1.0, false
+      local held, after = false, nil
+      for i = 1, 200 do
         step(1, {})
         if FR.get() == "hold" then held = true end
-        if held and FR.get() == "play" then minY = math.min(minY, b.y) end
-        if idx() > ti then climbed = true break end
+        if held and FR.get() == "play" and not after then after = {b.vx, b.vy} end
       end
-      trace(string.format("beetle (table %d at %d,%d): caught=%s, thrown to y=%.0f, out the top=%s %s", ti,
-        bt.x, bt.y, tostring(held), minY, tostring(climbed),
-        (held and (climbed or minY < bt.y - 40)) and "ok" or "PROBLEM"))
-    else trace("beetle: none generated in tables 0-40") end
+      trace(string.format("well (level %d): caught=%s, ejected v=(%.1f,%.1f) downward=%s wishes=%d %s", ti + 1,
+        tostring(held), after and after[1] or 0, after and after[2] or 0, tostring(after and after[2] > 0),
+        FR.run().wishes or 0, (held and after and after[2] > 0) and "ok" or "PROBLEM"))
+    else trace("well: none generated in levels 1-41") end
+  end
+  -- fairy ring launcher: LED circles, a flip fires that way; gold lap = more power
+  do
+    FR.new_game(7)
+    local ti = find_table(function(t)
+      for _, o in ipairs(t.objs) do if o.kind == "hole" and not o.queenRing and not o.court then return true end end
+    end)
+    FR.enter(ti) FR.force_state("play")
+    local ring
+    for _, o in ipairs(FR.cur().objs) do if o.kind == "hole" and not o.queenRing then ring = o end end
+    local function shoot(waitFrames)
+      FR.cur().holeCool = 0
+      ring.inside = false
+      b.x, b.y, b.vx, b.vy, b.noflip = ring.x, ring.y - 6, 0, 0.6, false
+      for i = 1, 30 do step(1, {}) if FR.get() == "aim" then break end end
+      local aimed = FR.get() == "aim"
+      step(waitFrames, {})                 -- let the LED travel (button released)
+      step(1, {[4] = true})                -- flip: fire
+      return aimed, FR.get(), math.sqrt(b.vx * b.vx + b.vy * b.vy)
+    end
+    local a1, s1, v1 = shoot(10)                       -- first lap: silver
+    local a2, s2, v2 = shoot(math.floor(2 * math.pi / 0.07) + 10) -- second lap: gold
+    trace(string.format("ring launcher (level %d): aimed=%s/%s, silver speed %.1f, gold speed %.1f %s", ti + 1,
+      tostring(a1), tostring(a2), v1, v2, (a1 and a2 and s1 == "play" and v2 > v1 + 1) and "ok" or "PROBLEM"))
   end
   -- bonus fairy: summon, hit her
   do
@@ -308,11 +332,16 @@ function BOOT()
     end
     local stageAfter = q.stage
     FR.set_balls(2)
-    b.x, b.y, b.vx, b.vy = q.x, q.y + 20, 0, -1.5
-    for i = 1, 40 do step(1, {}) if q.gone then break end end
+    local hits = 0
+    for k = 1, 12 do
+      if q.gone then break end
+      b.x, b.y, b.vx, b.vy = q.x, q.y + 22, 0, -1.8
+      for i = 1, 40 do step(1, {}) end
+      hits = hits + 1
+    end
     local _, _, nb = FR.get()
-    trace(string.format("fairy level: grew to stage %d, blessed=%s, balls 2->%d, checkpoint level %d %s",
-      stageAfter, tostring(q.gone == true), nb, FR.floor() + 1,
+    trace(string.format("fairy level: grew to stage %d, queen defeated after %d shots=%s, balls 2->%d, checkpoint level %d %s",
+      stageAfter, hits, tostring(q.gone == true), nb, FR.floor() + 1,
       (stageAfter == 3 and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
     -- below the checkpoint the drain is guarded
     FR.enter(5) FR.force_state("play")
@@ -322,6 +351,28 @@ function BOOT()
       (select(4, FR.get()) == 5 and b.y < 136) and "guarded ok" or "DRAINED"))
   end
   trace("table codes: level1=" .. FR.tcode(0) .. " level10=" .. FR.tcode(9))
+  do -- weak climbs: a shot that barely leaves the top must arrive with
+       -- enough momentum to get up into the new table (Infinity relaunches)
+    local peaks, times = {}, {}
+    for k = 1, 10 do
+      FR.new_game(30 + k) FR.enter(2) FR.force_state("play")
+      b.x, b.y, b.vx, b.vy, b.noflip = 75 + (k - 5) * 3, 1, (k % 3 - 1) * 0.4, -1.2, false
+      local arrived, peak, t = nil, 999, nil
+      for i = 1, 400 do
+        step(1, {})
+        local lv = select(4, FR.get())
+        if lv == 3 and not arrived then arrived = i end
+        if arrived and lv == 3 then peak = math.min(peak, b.y) end
+        if arrived and lv < 3 then t = i - arrived break end
+      end
+      peaks[#peaks + 1] = peak
+      times[#times + 1] = t or 400
+    end
+    local sp, st = 0, 0
+    for i = 1, 10 do sp, st = sp + peaks[i], st + times[i] end
+    trace(string.format("weak climbs: arriving ball rises to y=%.0f on average, %.1fs before it could drain",
+      sp / 10, st / 10 / 60))
+  end
 
   -- 2. launch on table 0
   FR.new_game(1)

@@ -63,6 +63,26 @@ python build.py
 
 This regenerates `fairy_ring_sprites.png` from `gen_sprites.py`, then packs everything into `fairy_ring.tic`. If you've hand-edited the PNG, use `python build.py --keep-png` so it isn't regenerated over your changes.
 
+## Tweaking the sprites
+
+Every sprite is exported as its own PNG in `art/sprites/` (for example `bumper_red_normal_hit.png`, `fairy_flutter_2frames.png`, `flippers_8_angles_32x24.png`), along with the full sheet (`_sheet.png`) and a 4x preview (`_sheet_x4.png`). The files are indexed with the game's 16-colour palette, and colour 0 is transparent.
+
+**Export** (already done; repeat only to start fresh, since it overwrites `art/sprites/`, so copy your edits somewhere else first):
+
+```bash
+python art/export_sprites.py
+```
+
+**Edit** any of the PNGs. Aseprite in indexed mode is ideal. Keep the image size and stick to the 16 palette colours.
+
+**Import** by building as usual:
+
+```bash
+python build.py
+```
+
+The build spots every sprite file that differs from the export and pastes it into the cart's sheet ("applied your edited sprites: ..."). Untouched files are ignored, so code changes to the generated art still come through.
+
 ## Game-over art
 
 The game-over screen is a full-screen 240x136 image. TIC-80 shows 16 colours at a time, but the game switches the palette on every scanline, so each row gets 10 colours of its own plus 6 fixed ones (the stats text colours). That keeps full-colour art close to the original. To replace the art, make a 240x136 PNG (any colours), then:
