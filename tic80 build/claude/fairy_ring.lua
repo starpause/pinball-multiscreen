@@ -435,9 +435,12 @@ local function generate(idx)
     -- 5. Final hit devolves queen, spawns center updraft ramp, clears brambles, grants checkpoint + extra ball.
     t.queen = {
       x = CX, y = -14, targetY = 44,
+      vx = 0, vy = 0, moveT = 0,
       state = "fly_in",
       t = 0, cool = 0, flash = 0,
-      minions = {}
+      tier = idx // (bossRush and 2 or 10),
+      minions = {},
+      shieldInvuln = 0
     }
     t.brambles = {}
     -- 2 layers of thorny brambles covering the top exit hole (x = 45 to 105, CX = 75)
@@ -449,9 +452,6 @@ local function generate(idx)
     for _, bx in ipairs({51, 63, 75, 87, 99}) do
       t.brambles[#t.brambles + 1] = {x = bx, y = 6, w = 12, layer = 2, hp = 1}
     end
-    -- two pixie guards sweep back and forth across the top
-    add_obj(t, "pixie", CX, 20, {travel = 42})
-    add_obj(t, "pixie", CX, 28, {travel = 42, phase = 190})
     return t
   end
 
@@ -735,8 +735,7 @@ local floorIdx = 0     -- checkpoint: falling below this loses the ball
 local best = 0
 local score, balls, mult = 0, 3, 1
 local saver = 0
-local holdT, holdObj = 0, nil
-local lostT = 0
+local holdT, holdObj, lostT, overT = 0, nil, 0, 0
 local msg, msgT = "", 0
 local shake, nudgeCool = 0, 0
 local frame = 0
@@ -745,7 +744,6 @@ local lflip, rflip = false, false
 local lostRespawn = "floor" -- where a lost ball comes back: "floor" or "here"
 local aimT, aimArmed = 0, false
 local AIM_SPEED = 0.07      -- radians per frame (a lap is ~1.5 s)
-local overT = 0
 -- per-run analytics, shown on the game-over screen and saved to pmem
 local run = {}
 local function lvstat(idx)
@@ -773,7 +771,7 @@ local function add(p, x, y)
 end
 -- the fairy: follows the ball; when summoned (BUDS) she glows and
 -- flutters around the table, hit her with a ball for a big bonus
-local fairy = {x = 120, y = 60, tx = 120, ty = 60, mode = "follow", t = 0}
+local fairy = {x = 120, y = 60, tx = 120, ty = 60, mode = "follow", t = 0, tier = 0}
 
 local bake -- forward
 
@@ -811,6 +809,7 @@ local function new_game(seed)
   masterSeed = seed or ((tstamp() * 31 + time() // 1) % 1679615) + 1
   tables, floorIdx, best, run = {}, 0, 0, {}
   score, balls, mult, saver = 0, 3, 1, 0
+  fairy.tier = 0
   fairy.mode = "follow"
   enter_table(0)
   serve()
@@ -975,7 +974,7 @@ local function toy_collide()
   end
   local q = cur.queen
   if q and not q.gone then
-    if q.state == "shield" and q.minions then
+    if (q.state == "shield" or q.state == "evolving") and q.minions then
       for _, m in ipairs(q.minions) do
         if m.alive then
           local dx, dy = ball.x - m.x, ball.y - m.y
@@ -989,7 +988,7 @@ local function toy_collide()
         end
       end
     end
-    if q.state ~= "fly_in" and q.state ~= "devolving" then
+    if q.state ~= "fly_in" and q.state ~= "devolving" and q.state ~= "fly_out" then
       local qr = (q.state == "landed" or (q.state == "evolving" and q.t % 6 < 3)) and 7 or 11
       local dx, dy = ball.x - q.x, ball.y - q.y
       local d = math.sqrt(dx*dx + dy*dy)
@@ -1244,16 +1243,26 @@ step_ball = function()
       elseif k == "minion" then
         local m = kind.minion
         amp, kick = 2, 1.5
-        m.alive = false
-        sparkle(m.x, m.y, 8, true)
-        shake = 4
-        add(2500, m.x, m.y)
-        local left = 0
-        if cur.queen and cur.queen.minions then
-          for _, mm in ipairs(cur.queen.minions) do if mm.alive then left = left + 1 end end
+        local q = cur.queen
+        if q and (q.shieldInvuln or 0) > 0 then
+          sparkle(m.x, m.y, 4, false)
+          say("SHIELD INVULNERABLE!", 30)
+        else
+          m.alive = false
+          sparkle(m.x, m.y, 8, true)
+          shake = 4
+          add(2500, m.x, m.y)
+          local left = 0
+          if q and q.minions then
+            for _, mm in ipairs(q.minions) do if mm.alive then left = left + 1 end end
+          end
+          if left > 0 then
+            say(left .. " SHIELD FAIRIES LEFT", 60)
+          end
         end
-        if left > 0 then
-          say(left .. " SHIELD FAIRIES LEFT", 60)
+        if q then
+          q.vx = (q.vx or 0) + nx * 0.8
+          q.vy = (q.vy or 0) + ny * 0.8
         end
       elseif k == "queen" then
         local q = cur.queen
@@ -1262,25 +1271,22 @@ step_ball = function()
           q.cool = 15
           if q.state == "landed" then
             q.state = "evolving"
-            q.t = 60
-            q.flash = 60
+            q.t = 70
+            q.flash = 70
             shake = 6
-            add(5000, q.x, q.y)
-            sparkle(q.x, q.y, 6, true)
-            say("FAIRY QUEEN GROWING...", 60)
-          elseif q.state == "big" then
-            q.state = "shield"
-            q.flash = 14
-            shake = 8
             q.orbitAngle = 0
             q.minions = {}
             for i = 1, 5 do
               q.minions[i] = {alive = true, x = q.x, y = q.y}
             end
+            q.shieldInvuln = 80
+            q.vx = (math.random() > 0.5 and 1 or -1) * 1.2
+            q.vy = -0.6
+            q.moveT = 40
             add(5000, q.x, q.y)
             for s = 1, 5 do sparkle(q.x + (s - 3) * 6, q.y, 6, true) end
             say("SHIELD OF 5 FAIRIES!", 90)
-          elseif q.state == "shield" then
+          elseif q.state == "shield" or q.state == "evolving" then
             q.flash = 6
             shake = 3
             add(1000, q.x, q.y)
@@ -1290,12 +1296,13 @@ step_ball = function()
             q.state = "devolving"
             q.t = 70
             q.flash = 70
-            shake = 14
             add(10000, q.x, q.y)
             for s = 1, 6 do sparkle(q.x + (s - 3.5) * 8, q.y, 8, true) end
             say("FAIRY QUEEN DEFEATED!", 90)
           end
         end
+        q.vx = (q.vx or 0) + nx * 1.5
+        q.vy = (q.vy or 0) + ny * 1.5
       end
     end
   end
@@ -1441,10 +1448,8 @@ game_over = function()
     table.concat(lv, " ")))
 end
 
-local cheatKeySeq = {9, 4, 11, 6, 1}          -- i, d, k, f, a
-local cheatBtnSeq = {0, 0, 1, 1, 2, 3, 2, 3}  -- up, up, down, down, left, right, left, right
-local cheatKeyIdx = 1
-local cheatBtnIdx = 1
+local cheatKeySeq, cheatBtnSeq = {9, 4, 11, 6, 1}, {0, 0, 1, 1, 2, 3, 2, 3}
+local cheatKeyIdx, cheatBtnIdx = 1, 1
 
 local function check_cheat_input()
   for k = 1, 26 do
@@ -1538,48 +1543,75 @@ local function update()
           for k = 1, 6 do sparkle(q.x + (k - 3.5) * 5, q.y + 6, 6, true) end
           say("FAIRY QUEEN LANDED!", 90)
         end
-      elseif q.state == "evolving" then
-        q.t = q.t - 1
-        if q.t % 4 == 0 then sparkle(q.x + (q.t % 5 - 2) * 4, q.y + (q.t % 3 - 1) * 4, 3, true) end
-        if q.t <= 0 then
-          q.state = "big"
-          say("FAIRY QUEEN EVOLVED!", 90)
+      elseif q.state == "evolving" or q.state == "shield" or q.state == "vulnerable" then
+        q.moveT = (q.moveT or 0) - 1
+        if q.moveT <= 0 then
+          local a = math.random() * 2 * math.pi
+          local spd = 0.7 + math.random() * 0.8
+          q.vx = math.cos(a) * spd
+          q.vy = math.sin(a) * spd
+          q.moveT = 40 + math.random(40)
         end
-      elseif q.state == "shield" then
-        q.orbitAngle = (q.orbitAngle or 0) + 0.04
-        local aliveCount = 0
-        local R = 22
-        for i, m in ipairs(q.minions) do
-          if m.alive then
-            aliveCount = aliveCount + 1
-            local a = q.orbitAngle + (i - 1) * (2 * math.pi / 5)
-            m.x = q.x + math.cos(a) * R
-            m.y = q.y + math.sin(a) * R
+        q.x = q.x + (q.vx or 0)
+        q.y = q.y + (q.vy or 0)
+        if q.x < 34 then q.x = 34 q.vx = math.abs(q.vx or 1) end
+        if q.x > 116 then q.x = 116 q.vx = -math.abs(q.vx or 1) end
+        if q.y < 24 then q.y = 24 q.vy = math.abs(q.vy or 1) end
+        if q.y > 76 then q.y = 76 q.vy = -math.abs(q.vy or 1) end
+
+        if q.shieldInvuln and q.shieldInvuln > 0 then
+          q.shieldInvuln = q.shieldInvuln - 1
+        end
+
+        if q.state == "evolving" then
+          q.t = q.t - 1
+          if q.t % 4 == 0 then sparkle(q.x + (q.t % 5 - 2) * 4, q.y + (q.t % 3 - 1) * 4, 3, true) end
+          if q.t <= 0 then
+            q.state = "shield"
+            say("FAIRY QUEEN EVOLVED!", 90)
           end
         end
-        if aliveCount == 0 then
-          q.state = "vulnerable"
-          q.flash = 30
-          shake = 8
-          say("SHIELD BROKEN! QUEEN VULNERABLE!", 120)
-        else
-          q.x = CX + math.sin(frame / 45) * 16
+
+        if q.state == "evolving" or q.state == "shield" then
+          q.orbitAngle = (q.orbitAngle or 0) + 0.04
+          local aliveCount = 0
+          local R = 22
+          for i, m in ipairs(q.minions) do
+            if m.alive then
+              aliveCount = aliveCount + 1
+              local a = q.orbitAngle + (i - 1) * (2 * math.pi / 5)
+              m.x = q.x + math.cos(a) * R
+              m.y = q.y + math.sin(a) * R
+            end
+          end
+          if aliveCount == 0 and q.state == "shield" then
+            q.state = "vulnerable"
+            q.flash = 30
+            shake = 6
+            say("SHIELD BROKEN! QUEEN VULNERABLE!", 120)
+          end
         end
-      elseif q.state == "vulnerable" or q.state == "big" then
-        q.x = CX + math.sin(frame / 45) * 16
       elseif q.state == "devolving" then
         q.t = q.t - 1
         if q.t % 4 == 0 then sparkle(q.x + (q.t % 7 - 3) * 4, q.y + (q.t % 5 - 2) * 4, 4, true) end
         if q.t <= 0 then
-          q.gone = true
+          q.state = "fly_out"
           cur.updraft = 30 * 60
           cur.brambles = {}
           for k = 1, 8 do sparkle(CX + (k - 4.5) * 10, 10, 8, true) end
           balls = math.min(5, balls + 1)
           floorIdx = math.max(floorIdx, cur.idx)
-          add(50000 * ((cur.idx // (bossRush and 2 or 10)) + 1), q.x, q.y)
+          local curTier = q.tier or (cur.idx // (bossRush and 2 or 10))
+          fairy.tier = math.max(fairy.tier or 0, curTier + 1)
+          add(50000 * (curTier + 1), q.x, q.y)
           say("FAIRY QUEEN DEFEATED! +1 BALL, CHECKPOINT", 200)
-          shake = 14
+        end
+      elseif q.state == "fly_out" then
+        q.y = q.y - 1.8
+        q.x = q.x + math.sin(frame / 6) * 0.8
+        if frame % 3 == 0 then sparkle(q.x, q.y + 4, 3, true) end
+        if q.y < -20 then
+          q.gone = true
         end
       end
     end
@@ -1807,33 +1839,63 @@ local RAINBOW = {
   {C_PINK, C_CYAN, C_LIME}, {C_GOLD, C_PINK, C_CYAN}, {C_RED, C_GOLD, C_LILAC},
   {C_LIME, C_LILAC, C_PINK}, {C_CYAN, C_LIME, C_GOLD}, {C_LILAC, C_RED, C_CYAN},
 }
-local function fairy_colors()
-  local r = RAINBOW[(cur.idx // (bossRush and 2 or 10)) % #RAINBOW + 1]
+local function fairy_colors(tier)
+  local t = tier or fairy.tier or 0
+  local r = RAINBOW[t % #RAINBOW + 1]
   palswap(C_PINK, r[1]) palswap(C_CYAN, r[2]) palswap(C_LIME, r[3])
 end
 
-local function draw_flipper(f)
-  local k = (f.s // 1) // 2
-  local id = 256 + (k // 4) * 48 + (k % 4) * 4
-  if f.dir == 1 then spr(id, f.px - 6, f.py - 12, 0, 1, 0, 0, 4, 3)
-  else spr(id, f.px - 25, f.py - 12, 0, 1, 1, 0, 4, 3) end
+local function get_shake()
+  if shake <= 0 then return 0, 0 end
+  local amp = math.min(4, math.ceil(shake / 3))
+  local sy = (shake % 2 == 1) and amp or -amp
+  local sxb = ((shake // 2) % 2 == 1) and (amp >= 2 and 1 or 0) or (amp >= 2 and -1 or 0)
+  return sxb * 2, sy
 end
 
-local function draw_world()
-  local sx = (shake > 0) and (frame % 2 * 2 - 1) or 0
-  memcpy(0, SNAP, SCRBYTES)
+local function blit_snap(sx, sy)
+  if sx == 0 and sy == 0 then
+    memcpy(0, SNAP, SCRBYTES)
+    return
+  end
+  local sxb = sx // 2
+  local rowBytes = 120 - math.abs(sxb)
+  local dstX = math.max(0, sxb)
+  local srcX = math.max(0, -sxb)
+  memset(0, 0, SCRBYTES)
+  for y = 0, 135 do
+    local sy_src = y - sy
+    if sy_src >= 0 and sy_src < 136 then
+      memcpy(y * 120 + dstX, SNAP + sy_src * 120 + srcX, rowBytes)
+    end
+  end
+end
+
+local function draw_flipper(f, sx, sy)
+  sx = sx or 0
+  sy = sy or 0
+  local k = (f.s // 1) // 2
+  local id = 256 + (k // 4) * 48 + (k % 4) * 4
+  if f.dir == 1 then spr(id, f.px - 6 + sx, f.py - 12 + sy, 0, 1, 0, 0, 4, 3)
+  else spr(id, f.px - 25 + sx, f.py - 12 + sy, 0, 1, 1, 0, 4, 3) end
+end
+
+local function draw_world(sx, sy)
+  sx = sx or 0
+  sy = sy or 0
+  blit_snap(sx, sy)
 
   if cur.brambles then
     for _, b in ipairs(cur.brambles) do
       if b.hp > 0 then
         local tid = (b.layer == 2) and 228 or 224
-        spr(tid, b.x - 8 + sx, b.y - 4, 0, 1, 0, 0, 2, 1)
+        spr(tid, b.x - 8 + sx, b.y - 4 + sy, 0, 1, 0, 0, 2, 1)
       end
     end
   end
 
   for _, o in ipairs(cur.objs) do
-    local x, y = o.x + sx, o.y
+    local x, y = o.x + sx, o.y + sy
     if o.kind == "bumper" then
       spr(o.flash > 0 and 34 or 32, x - 8, y - 8 - (o.flash > 0 and 1 or 0), 0, 1, 0, 0, 2, 2)
     elseif o.kind == "gold" then
@@ -1862,25 +1924,25 @@ local function draw_world()
   -- kit: kickback arrows, posts, updraft
   for i, side in ipairs({-1, 1}) do
     local lit = cur.kick[i] and (frame // 10) % 2 == 0
-    spr(lit and 13 or 12, side_x(KIT.kick.dx, side) - 4, KIT.kick.y - 10, 0)
+    spr(lit and 13 or 12, side_x(KIT.kick.dx, side) - 4 + sx, KIT.kick.y - 10 + sy, 0)
   end
   for _, p in ipairs(post_list()) do
     local blink = (cur.posts < 120 and cur.posts > 0 and p.y < 100) or
                   (cur.center < 120 and p.y > 100 and not cur.bonus)
-    if not blink or frame % 8 < 5 then spr(30, p.x - 4, p.y - 4, 0) end
+    if not blink or frame % 8 < 5 then spr(30, p.x - 4 + sx, p.y - 4 + sy, 0) end
   end
   if cur.updraft > 0 then
     for y = 12, 80, 10 do
-      local oy = (y - frame) % 70 + 12
-      spr(28, CX - 4, oy, 0)
+      local oy = (y - frame) % 70 + 12 + sy
+      spr(28, CX - 4 + sx, oy, 0)
     end
   end
   for si, l in ipairs(slingRim) do
     if (cur.slingCool or 0) > 3 and ((si == 1) == (ball.x < CX)) then
-      for _, i in ipairs(l) do pix(i % WW + sx, i // WW, C_WHITE) end
+      for _, i in ipairs(l) do pix(i % WW + sx, i // WW + sy, C_WHITE) end
     end
   end
-  for _, f in ipairs(cur.flippers) do draw_flipper(f) end
+  for _, f in ipairs(cur.flippers) do draw_flipper(f, sx, sy) end
   if state == "aim" and holdObj then
     -- the launcher LED: silver lap = normal, gold lap = full power
     local lap = (aimT * AIM_SPEED) // (2 * math.pi)
@@ -1888,103 +1950,140 @@ local function draw_world()
     for k = 0, 2 do
       local a = -math.pi / 2 + (aimT - k * 3) * AIM_SPEED
       local px, py = holdObj.x + math.cos(a) * 9, holdObj.y + math.sin(a) * 9
-      if k == 0 then circ(px + sx, py, 1, c) else pix(px + sx, py, k == 1 and c or C_LILAC) end
+      if k == 0 then circ(px + sx, py + sy, 1, c) else pix(px + sx, py + sy, k == 1 and c or C_LILAC) end
     end
   end
   for _, p in ipairs(cur.poo) do
     local guarded = (p.x == CX and (cur.center > 0 or protected())) or (p.x ~= CX and protected())
-    if not guarded then spr(p.off > 0 and 127 or 126, p.x - 4 + sx, p.y - 5, 0) end
+    if not guarded then spr(p.off > 0 and 127 or 126, p.x - 4 + sx, p.y - 5 + sy, 0) end
   end
   local q = cur.queen
   if q and not q.gone then
     local bob = (q.state == "landed") and 0 or math.sin(frame / 18) * 1.5
-    fairy_colors()
-    if q.flash > 0 and frame % 4 < 2 then
-      palswap(C_PINK, C_WHITE) palswap(C_CYAN, C_WHITE) palswap(C_LIME, C_WHITE)
-    end
+    local qTier = q.tier or (cur.idx // (bossRush and 2 or 10))
 
-    if q.state == "fly_in" or q.state == "landed" or
-       (q.state == "evolving" and frame % 4 < 2) or
-       (q.state == "devolving" and frame % 4 >= 2) then
-      -- Small fairy sprite (40/42)
-      spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob, 0, 1, 0, 0, 2, 2)
-    else
-      -- Big animated papoycore fairy (tiles 160, 164, 168, 172)
+    if q.state == "fly_in" or q.state == "landed" then
+      fairy_colors(qTier)
+      if q.flash > 0 and frame % 4 < 2 then
+        palswap(C_PINK, C_WHITE) palswap(C_CYAN, C_WHITE) palswap(C_LIME, C_WHITE)
+      end
+      spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob + sy, 0, 1, 0, 0, 2, 2)
+      palreset()
+    elseif q.state == "evolving" then
+      local isBig = frame % 4 < 2
+      fairy_colors(qTier)
+      if q.flash > 0 and frame % 4 < 2 then
+        palswap(C_PINK, C_WHITE) palswap(C_CYAN, C_WHITE) palswap(C_LIME, C_WHITE)
+      end
+      if isBig then
+        local animFrame = (frame // 6) % 4
+        spr(160 + animFrame * 4, q.x - 16 + sx, q.y - 16 + bob + sy, 0, 1, 0, 0, 4, 4)
+      else
+        spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob + sy, 0, 1, 0, 0, 2, 2)
+      end
+      palreset()
+    elseif q.state == "shield" or q.state == "vulnerable" then
+      fairy_colors(qTier)
+      if q.flash > 0 and frame % 4 < 2 then
+        palswap(C_PINK, C_WHITE) palswap(C_CYAN, C_WHITE) palswap(C_LIME, C_WHITE)
+      end
       local animFrame = (frame // 6) % 4
-      spr(160 + animFrame * 4, q.x - 16 + sx, q.y - 16 + bob, 0, 1, 0, 0, 4, 4)
+      spr(160 + animFrame * 4, q.x - 16 + sx, q.y - 16 + bob + sy, 0, 1, 0, 0, 4, 4)
+      palreset()
+    elseif q.state == "devolving" then
+      local isSmall = frame % 4 >= 2
+      if isSmall then
+        fairy_colors(qTier + 1)
+        spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob + sy, 0, 1, 0, 0, 2, 2)
+      else
+        fairy_colors(qTier)
+        local animFrame = (frame // 6) % 4
+        spr(160 + animFrame * 4, q.x - 16 + sx, q.y - 16 + bob + sy, 0, 1, 0, 0, 4, 4)
+      end
+      palreset()
+    elseif q.state == "fly_out" then
+      fairy_colors(qTier + 1)
+      spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob + sy, 0, 1, 0, 0, 2, 2)
+      palreset()
     end
 
-    -- Draw shield minions if in shield state
-    if q.state == "shield" and q.minions then
+    -- Draw shield minions if in shield or evolving state
+    if (q.state == "shield" or q.state == "evolving") and q.minions then
+      fairy_colors(qTier)
       for _, m in ipairs(q.minions) do
         if m.alive then
-          spr(40 + ((frame // 6) % 2) * 2, m.x - 8 + sx, m.y - 8, 0, 1, 0, 0, 2, 2)
+          spr(40 + ((frame // 6) % 2) * 2, m.x - 8 + sx, m.y - 8 + sy, 0, 1, 0, 0, 2, 2)
+          if q.shieldInvuln and q.shieldInvuln > 0 then
+            circb(m.x + sx, m.y + sy, 7, (frame // 4) % 2 == 0 and C_GOLD or C_WHITE)
+          end
         end
       end
-      circb(q.x + sx, q.y + bob, 22 + (frame // 6) % 2, (frame // 4) % 2 == 0 and C_CYAN or C_WHITE)
+      palreset()
+      circb(q.x + sx, q.y + bob + sy, 22 + (frame // 6) % 2, (frame // 4) % 2 == 0 and C_CYAN or C_WHITE)
     elseif q.state == "vulnerable" then
-      circb(q.x + sx, q.y + bob, 15 + (frame // 4) % 3, (frame // 4) % 2 == 0 and C_GOLD or C_WHITE)
+      circb(q.x + sx, q.y + bob + sy, 15 + (frame // 4) % 3, (frame // 4) % 2 == 0 and C_GOLD or C_WHITE)
     end
-    palreset()
   end
 
   for _, e in ipairs(extras) do
-    spr((e.rot // 64) % 4, e.x // 1 - 4 + sx, e.y // 1 - 4, 0)
+    spr((e.rot // 64) % 4, e.x // 1 - 4 + sx, e.y // 1 - 4 + sy, 0)
   end
   local slow = math.abs(ball.vx) + math.abs(ball.vy) < 0.6
   if not ball.dx or not slow then ball.dx, ball.dy = ball.x, ball.y
   else ball.dx, ball.dy = ball.dx + (ball.x - ball.dx) * 0.25, ball.dy + (ball.y - ball.dy) * 0.25 end
-  local bx, by = (ball.dx + 0.5) // 1 + sx, (ball.dy + 0.5) // 1
+  local bx, by = (ball.dx + 0.5) // 1 + sx, (ball.dy + 0.5) // 1 + sy
   if state ~= "lost" and not (state == "hold" and holdT % 6 < 3) and not (state == "aim" and frame % 8 < 3) then
     spr((ball.rot // 64) % 4, bx - 4, by - 4, 0)
   end
   for _, p in ipairs(parts) do
     if p.dust then
       local c = p.t > 16 and C_GOLD or p.t > 8 and C_LILAC or C_FLOORL
-      pix(p.x + sx, p.y, c) pix(p.x + 1 + sx, p.y, c)
+      pix(p.x + sx, p.y + sy, c) pix(p.x + 1 + sx, p.y + sy, c)
     else
-      spr(4 + (3 - math.min(3, p.t // 6)), p.x - 4 + sx, p.y - 4, 0)
+      spr(4 + (3 - math.min(3, p.t // 6)), p.x - 4 + sx, p.y - 4 + sy, 0)
     end
   end
   local fy = fairy.y + math.sin(frame / 20) * 2
   if cur.queen and not cur.queen.gone then return end -- she is the one on the perch
-  fairy_colors()
+  fairy_colors(fairy.tier)
   if fairy.mode == "bonus" then
     -- summoned: golden glow, blinking when about to leave
     if fairy.t > 180 or frame % 8 < 5 then
-      circb(fairy.x + sx, fy, 8 + (frame // 6) % 2, C_GOLD)
+      circb(fairy.x + sx, fy + sy, 8 + (frame // 6) % 2, C_GOLD)
       palswap(C_CYAN, C_GOLD) palswap(C_PINK, C_WHITE)
     end
   end
-  spr(40 + ((frame // 6) % 2) * 2, fairy.x - 8 + sx, fy - 8, 0, 1,
+  spr(40 + ((frame // 6) % 2) * 2, fairy.x - 8 + sx, fy - 8 + sy, 0, 1,
       fairy.tx < fairy.x and 1 or 0, 0, 2, 2)
   palreset()
 end
 
 
-local function draw_hud()
-  local hx = HUD_X + 6
-  print(string.format("%8d", score), hx, 24, C_WHITE, true, 1, false)
+local function draw_hud(sx, sy)
+  sx = sx or 0
+  sy = sy or 0
+  local hx = HUD_X + 6 + sx
+  print(string.format("%8d", score), hx, 24 + sy, C_WHITE, true, 1, false)
   -- balls left as balls; used-up slots as faint empty rings (a lost ball
   -- used to be a little mushroom, which read as a remaining life)
   for i = 1, math.max(3, balls) do
-    if i <= balls then spr(0, hx + (i - 1) * 9, 33, 0)
-    else circb(hx + (i - 1) * 9 + 3, 36, 3, C_FLOORL) end
+    if i <= balls then spr(0, hx + (i - 1) * 9, 33 + sy, 0)
+    else circb(hx + (i - 1) * 9 + 3, 36 + sy, 3, C_FLOORL) end
   end
-  if mult > 1 then print("x" .. mult, hx + 30, 35, C_GOLD, false, 1, true) end
-  if #extras > 0 then print("MULTIBALL +" .. #extras, hx, 52, C_CYAN, false, 1, true) end
-  if saver > 0 and (saver > 120 or frame % 16 < 8) then print("SAVE", hx + 52, 35, C_CYAN, false, 1, true) end
+  if mult > 1 then print("x" .. mult, hx + 30, 35 + sy, C_GOLD, false, 1, true) end
+  if #extras > 0 then print("MULTIBALL +" .. #extras, hx, 52 + sy, C_CYAN, false, 1, true) end
+  if saver > 0 and (saver > 120 or frame % 16 < 8) then print("SAVE", hx + 52, 35 + sy, C_CYAN, false, 1, true) end
   local lv = "LEVEL " .. cur.idx + 1
-  print(lv, hx, 45, cur.bonus and C_GOLD or C_LIME, false, 1, true)
-  print(tcode(cur.idx), hx + #lv * 4 + 4, 45, C_FLOORL, false, 1, true)
+  print(lv, hx, 45 + sy, cur.bonus and C_GOLD or C_LIME, false, 1, true)
+  print(tcode(cur.idx), hx + #lv * 4 + 4, 45 + sy, C_FLOORL, false, 1, true)
   if floorIdx > 0 and #extras == 0 then
-    print("SAFE TO LV " .. floorIdx + 1, hx, 52, C_LILAC, false, 1, true)
+    print("SAFE TO LV " .. floorIdx + 1, hx, 52 + sy, C_LILAC, false, 1, true)
   end
   -- goals: trigger -> reward with progress
-  local y = 66
+  local y = 66 + sy
   local q = cur.queen
   if q then
-    if q.gone then
+    if q.gone or q.state == "fly_out" then
       print("DEFEATED!", hx, y, C_LIME, false, 1, true)
       print(">CLIMB ON", hx + 4, y + 7, C_LIME, false, 1, true)
     elseif q.state == "fly_in" or q.state == "landed" then
@@ -1992,9 +2091,7 @@ local function draw_hud()
       print(">HIT HER!", hx + 4, y + 7, C_GOLD, false, 1, true)
     elseif q.state == "evolving" then
       print("GROWING...", hx, y, C_PINK, false, 1, true)
-    elseif q.state == "big" then
-      print("FAIRY QUEEN", hx, y, C_GOLD, false, 1, true)
-      print(">HIT HER!", hx + 4, y + 7, C_GOLD, false, 1, true)
+      print(">BEWARE SHIELD", hx + 4, y + 7, C_CYAN, false, 1, true)
     elseif q.state == "shield" then
       local mCount = 0
       if q.minions then for _, m in ipairs(q.minions) do if m.alive then mCount = mCount + 1 end end end
@@ -2025,19 +2122,19 @@ local function draw_hud()
   for k = -3, 3 do
     local idx = cur.idx + k
     if idx >= 0 then
-      local ty = 104 - k * 5
+      local ty = 104 - k * 5 + sy
       local t = tables[idx]
       local c = C_FLOOR
       if t and t.cleared then c = C_LIME elseif t and t.visited then c = C_MOSS end
       if is_bonus(idx) then c = C_GOLD end
-      rect(229, ty, 6, 4, c)
-      if k == 0 then rectb(228, ty - 1, 8, 6, C_WHITE) end
+      rect(229 + sx, ty, 6, 4, c)
+      if k == 0 then rectb(228 + sx, ty - 1, 8, 6, C_WHITE) end
     end
   end
   if msgT > 0 and (msgT > 30 or frame % 8 < 4) then
-    print(msg, hx, 127, C_GOLD, false, 1, true)
+    print(msg, hx, 127 + sy, C_GOLD, false, 1, true)
   elseif state == "ready" and frame % 40 < 30 then
-    print("FLIP TO LAUNCH", hx, 127, C_LILAC, false, 1, true)
+    print("FLIP TO LAUNCH", hx, 127 + sy, C_LILAC, false, 1, true)
   end
   if state == "title" then
     rect(15, 46, 120, 40, C_KEY) rectb(15, 46, 120, 40, C_PINK) rectb(17, 48, 116, 36, C_MOSS)
@@ -2200,8 +2297,9 @@ function TIC()
   update_fairy()
   if state == "over" then draw_over() return end
   if state == "stats" then draw_stats() return end
-  draw_world()
-  draw_hud()
+  local sx, sy = get_shake()
+  draw_world(sx, sy)
+  draw_hud(sx, sy)
 end
 
 -- test hook for the headless harness (harmless in the real cart)
@@ -2227,5 +2325,5 @@ FR = {
   aim = function() return aimT, aimArmed end,
   tcode = tcode,
   floor = function() return floorIdx end,
-  tic_draw = function() update_fairy() draw_world() draw_hud() end,
+  tic_draw = function() update_fairy() local sx, sy = get_shake() draw_world(sx, sy) draw_hud(sx, sy) end,
 }

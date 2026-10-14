@@ -2,6 +2,7 @@
 -- ===================== AUTOTEST (appended by run_tests.py) =====================
 -- Drives the real game code with a virtual pad, prints results with trace(),
 -- dumps screenshots as hex rows ("SHOT name" + 136 lines) and exits.
+local function _run_autotest_setup()
 local realBOOT = BOOT
 local _trace = trace
 local function trace(m) _trace(m .. "\n") end
@@ -337,51 +338,50 @@ function BOOT()
     for i = 1, 30 do step(1, {}) if b1.hp <= 0 then break end end
     local brambleBroke = b1.hp <= 0
 
-    -- 3. Hit landed queen -> enters evolving state, then becomes big
+    -- 3. Hit landed queen -> immediately enters evolving state AND summons 5 minions with invulnerability
     b.x, b.y, b.vx, b.vy, b.noflip = q.x, q.y + 14, 0, -1.8, false
     for i = 1, 30 do step(1, {}) if q.state == "evolving" then break end end
-    for i = 1, 70 do
-      b.x, b.y, b.vx, b.vy = 75, 80, 0, 0
-      step(1, {})
-      if q.state == "big" then break end
-    end
-    local bigOk = q.state == "big"
+    local evolveSpawnOk = q.state == "evolving" and q.minions and #q.minions == 5 and (q.shieldInvuln or 0) > 0
 
-    -- 4. Hit big queen -> summons 5 circling minions
-    b.x, b.y, b.vx, b.vy, b.noflip = q.x, q.y + 18, 0, -1.8, false
-    for i = 1, 30 do step(1, {}) if q.state == "shield" then break end end
+    -- Wait for evolution and shieldInvuln to expire -> shield state
+    for i = 1, 100 do
+      b.x, b.y, b.vx, b.vy = 75, 110, 0, 0
+      step(1, {})
+      if q.state == "shield" and (q.shieldInvuln or 0) <= 0 then break end
+    end
     local shieldOk = q.state == "shield" and q.minions and #q.minions == 5
 
-    -- 5. Pop all 5 minions
+    -- 4. Pop all 5 minions
     for k = 1, 5 do
       local m = q.minions[k]
-      for tries = 1, 5 do
+      for tries = 1, 10 do
         if not m.alive then break end
         b.x, b.y, b.vx, b.vy, b.noflip = m.x, m.y + 7, 0, -1.6, false
-        for i = 1, 12 do
+        for i = 1, 15 do
           step(1, {})
           if not m.alive then break end
         end
       end
     end
-    for i = 1, 15 do b.x, b.y, b.vx, b.vy = 75, 80, 0, 0 step(1, {}) end
+    for i = 1, 20 do b.x, b.y, b.vx, b.vy = 75, 110, 0, 0 step(1, {}) end
     local vulnOk = q.state == "vulnerable"
 
-    -- 6. Hit vulnerable queen -> devolves, defeated!
+    -- 5. Hit vulnerable queen -> devolves, defeated, and flies out!
     FR.set_balls(2)
     b.x, b.y, b.vx, b.vy, b.noflip = q.x, q.y + 18, 0, -1.8, false
     for i = 1, 30 do step(1, {}) if q.state == "devolving" then break end end
-    for i = 1, 90 do
-      b.x, b.y, b.vx, b.vy = 75, 80, 0, 0
+    local devolveOk = q.state == "devolving"
+    for i = 1, 160 do
+      b.x, b.y, b.vx, b.vy = 75, 110, 0, 0
       step(1, {})
       if q.gone then break end
     end
 
     local _, _, nb = FR.get()
-    trace(string.format("fairy boss: landed=%s bramble=%s big=%s shield=%s vuln=%s defeated=%s, balls 2->%d, checkpoint lv %d %s",
-      tostring(landedOk), tostring(brambleBroke), tostring(bigOk), tostring(shieldOk), tostring(vulnOk),
-      tostring(q.gone == true), nb, FR.floor() + 1,
-      (landedOk and brambleBroke and bigOk and shieldOk and vulnOk and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
+    trace(string.format("fairy boss: landed=%s bramble=%s spawn=%s shield=%s vuln=%s devolve=%s defeated=%s, balls 2->%d, checkpoint lv %d %s",
+      tostring(landedOk), tostring(brambleBroke), tostring(evolveSpawnOk), tostring(shieldOk), tostring(vulnOk),
+      tostring(devolveOk), tostring(q.gone == true), nb, FR.floor() + 1,
+      (landedOk and brambleBroke and evolveSpawnOk and shieldOk and vulnOk and devolveOk and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
     -- below the checkpoint the drain is guarded
     FR.enter(5) FR.force_state("play")
     b.x, b.y, b.vx, b.vy = 75, 118, 0, 1.0
@@ -604,3 +604,5 @@ function BOOT()
   shot("title")
   exit()
 end
+end
+_run_autotest_setup()
