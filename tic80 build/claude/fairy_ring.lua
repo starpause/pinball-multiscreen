@@ -433,14 +433,21 @@ local function generate(idx)
     -- 3. Second hit: summons shield ring of 5 circling fairies.
     -- 4. Destroying all 5 shield fairies makes queen core vulnerable.
     -- 5. Final hit devolves queen, spawns center updraft ramp, clears brambles, grants checkpoint + extra ball.
+    local landX = rng.int(CX - 18, CX + 18)
+    local landY = rng.int(38, 46)
     t.queen = {
-      x = CX, y = -14, targetY = 44,
-      vx = 0, vy = 0, moveT = 0,
+      x = landX, y = WH + 16,
+      landX = landX, landY = landY,
+      apexY = landY - 14,
       state = "fly_in",
+      landed = false,
+      flyDown = false,
+      vx = 0, vy = 0, moveT = 0,
       t = 0, cool = 0, flash = 0,
       tier = idx // (bossRush and 2 or 10),
       minions = {},
-      shieldInvuln = 0
+      shieldInvuln = 0,
+      crater = nil
     }
     t.brambles = {}
     -- 2 layers of thorny brambles covering the top exit hole (x = 45 to 105, CX = 75)
@@ -775,7 +782,7 @@ local fairy = {x = CX + 14, y = 115, tx = CX + 14, ty = 115, mode = "follow", t 
 
 local function boss_active()
   for _, t in pairs(tables) do
-    if t.bonus and t.queen and not t.queen.gone then return true end
+    if t.bonus and t.queen and t.queen.landed and not t.queen.gone then return true end
   end
   return false
 end
@@ -1089,8 +1096,8 @@ local function sensors()
   if cur.updraft and (cur.updraft == true or cur.updraft > 0) and math.abs(ball.x - CX) <= 12 and ball.y > 8 and ball.y < 88 then
     local dx = ball.x - CX
     ball.x = ball.x - dx * 0.12
-    if ball.vy > -4.8 then
-      ball.vy = -4.8
+    if ball.vy > -3.5 then
+      ball.vy = -3.5
       shake = math.max(shake, 1)
     end
     if dx < -1.5 then
@@ -1303,22 +1310,24 @@ step_ball = function()
         if q.cool <= 0 then
           q.cool = 15
           if q.state == "landed" then
+            cur.kick[1], cur.kick[2] = true, true
             q.state = "evolving"
             q.t = 70
+            q.evoT = 0
             q.flash = 70
-            shake = 6
+            q.shieldInvuln = 70
+            q.ringR = 0
             q.orbitAngle = 0
             q.minions = {}
             for i = 1, 5 do
-              q.minions[i] = {alive = true, x = q.x, y = q.y}
+              q.minions[i] = {alive = false, spawnT = 32 + (i - 1) * 7, x = q.x, y = q.y}
             end
-            q.shieldInvuln = 80
-            q.vx = (math.random() > 0.5 and 1 or -1) * 1.2
-            q.vy = -0.6
-            q.moveT = 40
+            q.vx, q.vy = 0, 0
+            q.recoilX, q.recoilY = 0, 0
+            shake = 6
             add(5000, q.x, q.y)
             for s = 1, 5 do sparkle(q.x + (s - 3) * 6, q.y, 6, true) end
-            say("SHIELD OF 5 FAIRIES!", 90)
+            say("KICKBACKS RESTORED! QUEEN EVOLVING...", 90)
           elseif q.state == "shield" or q.state == "evolving" then
             q.flash = 6
             shake = 3
@@ -1334,8 +1343,10 @@ step_ball = function()
             say("FAIRY QUEEN DEFEATED!", 90)
           end
         end
-        q.vx = (q.vx or 0) + nx * 1.5
-        q.vy = (q.vy or 0) + ny * 1.5
+        q.recoilX = (q.recoilX or 0) + nx * 1.5
+        q.recoilY = (q.recoilY or 0) + ny * 1.5
+        q.vx = (q.vx or 0) + nx * 0.5
+        q.vy = (q.vy or 0) + ny * 0.5
       end
     end
   end
@@ -1420,7 +1431,7 @@ local function transitions()
     enter_table(nxt)
     ball.y = ball.y + WH
     ball.noflip, ball.above = true, false
-    ball.vy = math.min(ball.vy, LAUNCH_VY - 0.3)        -- always arrive with momentum
+    ball.vy = math.max(-3.5, math.min(ball.vy, -2.6))        -- arrive with steady momentum without overshooting
     ball.vx = math.max(-1.2, math.min(1.2, ball.vx))
     fairy.y = WH + 14
     fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
@@ -1594,44 +1605,85 @@ local function update()
     if q.flash > 0 then q.flash = q.flash - 1 end
     if state == "play" then
       if q.state == "fly_in" then
-        q.y = q.y + 1.2
-        if q.y >= q.targetY then
-          q.y = q.targetY
-          q.state = "landed"
-          shake = 14
-          for k = 1, 6 do sparkle(q.x + (k - 3.5) * 5, q.y + 6, 6, true) end
-          say("FAIRY QUEEN LANDED!", 90)
+        if not q.flyDown then
+          q.y = q.y - 3.2
+          q.x = q.landX + math.sin(q.y / 8) * 1.5
+          if frame % 3 == 0 then sparkle(q.x, q.y + 4, 2, true) end
+          if q.y <= q.apexY then
+            q.y = q.apexY
+            q.flyDown = true
+          end
+        else
+          q.y = q.y + 3.6
+          if q.y >= q.landY then
+            q.y = q.landY
+            q.x = q.landX
+            q.landed = true
+            q.state = "landed"
+            shake = 14
+            q.crater = {x = q.x, y = q.y + 6}
+            for k = 1, 8 do sparkle(q.x + (k - 4.5) * 4, q.y + 6, 6, true) end
+            say("FAIRY QUEEN LANDED!", 90)
+          end
         end
-      elseif q.state == "evolving" or q.state == "shield" or q.state == "vulnerable" then
-        q.moveT = (q.moveT or 0) - 1
-        if q.moveT <= 0 then
-          local a = math.random() * 2 * math.pi
-          local spd = 0.7 + math.random() * 0.8
-          q.vx = math.cos(a) * spd
-          q.vy = math.sin(a) * spd
-          q.moveT = 40 + math.random(40)
+      elseif q.state == "evolving" then
+        q.evoT = (q.evoT or 0) + 1
+        q.orbitAngle = (q.orbitAngle or 0) + 0.04
+        -- Queen hovers stably during evolution
+        q.x = q.landX + (q.recoilX or 0)
+        q.y = q.landY + math.sin(q.evoT / 10) * 1.5 + (q.recoilY or 0)
+        q.recoilX = (q.recoilX or 0) * 0.88
+        q.recoilY = (q.recoilY or 0) * 0.88
+
+        -- (1) Evolve bigger with flashing and sprite swap
+        if q.evoT <= 20 then
+          if q.evoT % 4 == 0 then sparkle(q.x + (q.evoT % 5 - 2) * 4, q.y + (q.evoT % 3 - 1) * 4, 3, true) end
         end
-        q.x = q.x + (q.vx or 0)
-        q.y = q.y + (q.vy or 0)
-        if q.x < 34 then q.x = 34 q.vx = math.abs(q.vx or 1) end
-        if q.x > 116 then q.x = 116 q.vx = -math.abs(q.vx or 1) end
-        if q.y < 24 then q.y = 24 q.vy = math.abs(q.vy or 1) end
-        if q.y > 76 then q.y = 76 q.vy = -math.abs(q.vy or 1) end
+
+        -- (2) Ring grows around her
+        if q.evoT >= 20 and q.evoT <= 35 then
+          q.ringR = math.min(22, (q.evoT - 20) * 1.5)
+        elseif q.evoT > 35 then
+          q.ringR = 22
+        end
+
+        -- (3) The 5 fairies appear around her 1 by 1
+        local R = q.ringR or 22
+        for i, m in ipairs(q.minions) do
+          local a = q.orbitAngle + (i - 1) * (2 * math.pi / 5)
+          m.x = q.x + math.cos(a) * R
+          m.y = q.y + math.sin(a) * R
+          if not m.alive and q.evoT >= (m.spawnT or 0) then
+            m.alive = true
+            sparkle(m.x, m.y, 6, true)
+            shake = math.max(shake, 2)
+          end
+        end
+
+        -- (4) Her flashing stops and shield phase begins
+        if q.evoT >= 70 then
+          q.state = "shield"
+          q.flash = 0
+          q.shieldInvuln = 0
+          for _, m in ipairs(q.minions) do m.alive = true end
+          say("DESTROY THE 5 SHIELD FAIRIES!", 90)
+        end
+      elseif q.state == "shield" or q.state == "vulnerable" then
+        -- Graceful, dramatic flight strictly above the kicker bumpers (y <= 52, kickers start at y = 72)
+        local targetX = CX + math.sin(frame / 45) * 32 + math.cos(frame / 75) * 8
+        local targetY = 38 + math.sin(frame / 32) * 10
+        q.x = q.x + (targetX - q.x) * 0.05 + (q.recoilX or 0)
+        q.y = q.y + (targetY - q.y) * 0.05 + (q.recoilY or 0)
+        q.recoilX = (q.recoilX or 0) * 0.88
+        q.recoilY = (q.recoilY or 0) * 0.88
+        q.x = math.max(38, math.min(112, q.x))
+        q.y = math.max(22, math.min(52, q.y))
 
         if q.shieldInvuln and q.shieldInvuln > 0 then
           q.shieldInvuln = q.shieldInvuln - 1
         end
 
-        if q.state == "evolving" then
-          q.t = q.t - 1
-          if q.t % 4 == 0 then sparkle(q.x + (q.t % 5 - 2) * 4, q.y + (q.t % 3 - 1) * 4, 3, true) end
-          if q.t <= 0 then
-            q.state = "shield"
-            say("FAIRY QUEEN EVOLVED!", 90)
-          end
-        end
-
-        if q.state == "evolving" or q.state == "shield" then
+        if q.state == "shield" then
           q.orbitAngle = (q.orbitAngle or 0) + 0.04
           local aliveCount = 0
           local R = 22
@@ -1643,7 +1695,7 @@ local function update()
               m.y = q.y + math.sin(a) * R
             end
           end
-          if aliveCount == 0 and q.state == "shield" then
+          if aliveCount == 0 then
             q.state = "vulnerable"
             q.flash = 30
             shake = 6
@@ -1651,28 +1703,43 @@ local function update()
           end
         end
       elseif q.state == "devolving" then
+        -- (1) Shrinks and changes colors
         q.t = q.t - 1
         if q.t % 4 == 0 then sparkle(q.x + (q.t % 7 - 3) * 4, q.y + (q.t % 5 - 2) * 4, 4, true) end
         if q.t <= 0 then
+          -- (2) Starts flying up
           q.state = "fly_out"
+          q.vy = -3.0
+          say("FAIRY QUEEN RETREATING!", 60)
+        end
+      elseif q.state == "fly_out" then
+        -- (2) Flies up, breaking/destroying any remaining brambles along the way
+        q.y = q.y + (q.vy or -3.0)
+        q.x = q.x + math.sin(frame / 4) * 0.8
+        if frame % 2 == 0 then sparkle(q.x, q.y + 4, 3, true) end
+        if q.y < 24 and cur.brambles then
+          for _, b in ipairs(cur.brambles) do
+            if b.hp > 0 and math.abs(b.x - q.x) < 24 then
+              b.hp = 0
+              sparkle(b.x, b.y, 8, true)
+              shake = math.max(shake, 3)
+            end
+          end
+        end
+        if q.y < 0 then cur.brambles = {} end
+        -- (3) When she's gone, the updraft arrows appear for us to chase her
+        if q.y < -20 then
+          q.gone = true
           cur.updraft = true
           cur.updraftPerm = true
-          cur.brambles = {}
           for k = 1, 8 do sparkle(CX + (k - 4.5) * 10, 10, 8, true) end
           floorIdx = math.max(floorIdx, cur.idx)
           local curTier = q.tier or (cur.idx // (bossRush and 2 or 10))
           fairy.tier = math.max(fairy.tier or 0, curTier + 1)
           add(50000 * (curTier + 1), q.x, q.y)
-          say("FAIRY QUEEN DEFEATED! CHECKPOINT", 200)
-        end
-      elseif q.state == "fly_out" then
-        q.y = q.y - 1.8
-        q.x = q.x + math.sin(frame / 6) * 0.8
-        if frame % 3 == 0 then sparkle(q.x, q.y + 4, 3, true) end
-        if q.y < -20 then
-          q.gone = true
-          fairy.x, fairy.y = q.x, -14
-          fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
+          say("FAIRY QUEEN DEFEATED! CHASE HER UP!", 200)
+          fairy.x, fairy.y = q.x, -20
+          fairy.tx, fairy.ty = q.x, -20
         end
       end
     end
@@ -1750,11 +1817,22 @@ local function update()
     end
   elseif state == "play" then
     if nudgeHeld() and nudgeCool == 0 then
-      nudgeCool, shake = 30, 6
-      if touching then
-        local f = -2 * lastNy
-        if f > 0 then ball.vx, ball.vy = ball.vx + f*lastNx, ball.vy + f*lastNy end
+      nudgeCool, shake = 24, 7
+      local dir = pad(2) and 1 or pad(3) and -1 or (ball.x < CX and 1 or -1)
+      local inDanger = math.abs(ball.x - CX) > 36 and ball.y > 75
+      if inDanger then
+        ball.vx = ball.vx + dir * 2.4
+        ball.vy = math.min(ball.vy * 0.4, -1.8)
+        say("TILT SAVE!", 40)
+      else
+        ball.vx = ball.vx + dir * 1.5
+        ball.vy = math.min(ball.vy, ball.vy - 1.2)
       end
+      if touching then
+        ball.vx = ball.vx + lastNx * 2.0
+        ball.vy = ball.vy + lastNy * 2.0
+      end
+      sparkle(ball.x, ball.y, 4, true)
     end
     -- trap safety net (Infinity respawns a stuck ball after 5 s): if the
     -- ball stays inside a 16 px box for 4 s with no flipper held (so a
@@ -1994,7 +2072,7 @@ local function draw_world(sx, sy)
   end
   if cur.updraft and (cur.updraft == true or cur.updraft > 0) then
     for y = 12, 80, 10 do
-      local oy = (y - frame * 2) % 70 + 12 + sy
+      local oy = (y - frame) % 70 + 12 + sy
       spr(28, CX - 4 + sx, oy, 0)
     end
   end
@@ -2019,6 +2097,16 @@ local function draw_world(sx, sy)
     if not guarded then spr(p.off > 0 and 127 or 126, p.x - 4 + sx, p.y - 5 + sy, 0) end
   end
   local q = cur.queen
+  if q and q.crater then
+    local cx, cy = q.crater.x + sx, q.crater.y + sy
+    circb(cx, cy, 7, C_KEY)
+    line(cx - 9, cy, cx - 4, cy, C_KEY)
+    line(cx + 4, cy, cx + 10, cy - 1, C_KEY)
+    line(cx - 3, cy + 3, cx - 6, cy + 7, C_KEY)
+    line(cx + 3, cy + 3, cx + 6, cy + 6, C_KEY)
+    line(cx - 2, cy - 3, cx - 5, cy - 6, C_KEY)
+    line(cx + 2, cy - 3, cx + 5, cy - 5, C_KEY)
+  end
   if q and not q.gone then
     local bob = (q.state == "landed") and 0 or math.sin(frame / 18) * 1.5
     local qTier = q.tier or (cur.idx // (bossRush and 2 or 10))
@@ -2031,7 +2119,7 @@ local function draw_world(sx, sy)
       spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob + sy, 0, 1, 0, 0, 2, 2)
       palreset()
     elseif q.state == "evolving" then
-      local isBig = frame % 4 < 2
+      local isBig = (q.evoT and q.evoT > 20) or (frame % 4 < 2)
       fairy_colors(qTier)
       if q.flash > 0 and frame % 4 < 2 then
         palswap(C_PINK, C_WHITE) palswap(C_CYAN, C_WHITE) palswap(C_LIME, C_WHITE)
@@ -2043,6 +2131,9 @@ local function draw_world(sx, sy)
         spr(40 + ((frame // 6) % 2) * 2, q.x - 8 + sx, q.y - 8 + bob + sy, 0, 1, 0, 0, 2, 2)
       end
       palreset()
+      if q.ringR and q.ringR > 3 then
+        circb(q.x + sx, q.y + bob + sy, q.ringR, (frame // 4) % 2 == 0 and C_GOLD or C_CYAN)
+      end
     elseif q.state == "shield" or q.state == "vulnerable" then
       fairy_colors(qTier)
       if q.flash > 0 and frame % 4 < 2 then
@@ -2080,7 +2171,9 @@ local function draw_world(sx, sy)
         end
       end
       palreset()
-      circb(q.x + sx, q.y + bob + sy, 22 + (frame // 6) % 2, (frame // 4) % 2 == 0 and C_CYAN or C_WHITE)
+      if q.state == "shield" then
+        circb(q.x + sx, q.y + bob + sy, 22 + (frame // 6) % 2, (frame // 4) % 2 == 0 and C_CYAN or C_WHITE)
+      end
     elseif q.state == "vulnerable" then
       circb(q.x + sx, q.y + bob + sy, 15 + (frame // 4) % 3, (frame // 4) % 2 == 0 and C_GOLD or C_WHITE)
     end
