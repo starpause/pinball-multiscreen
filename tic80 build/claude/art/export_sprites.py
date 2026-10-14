@@ -62,6 +62,8 @@ SPRITES = [
     ("pixie_2frames", 0, 64, 32, 16),
     ("wishing_well_idle_spin", 64, 64, 32, 16),
     ("flippers_8_angles_32x24", 0, 128, 128, 48),
+    ("fairy_boss_4frames_32", 0, 80, 128, 32),
+    ("brambles_16x8", 0, 112, 64, 8),
     ("queen_red_lg_32", 0, 176, 32, 32),
     ("queen_red_md_24", 32, 176, 24, 24),
 ]

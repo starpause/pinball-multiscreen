@@ -8,9 +8,14 @@ The PNG is indexed with the FAIRY NIGHT palette, so you can open it in
 Aseprite / any editor, repaint, and rebuild the cart with build_tic.py.
 """
 import math
+import os
 import struct
 import sys
 import zlib
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 
 # ---------------- FAIRY NIGHT palette (16 colours) ----------------
 PAL = [
@@ -942,6 +947,77 @@ def beetle_girl_24():
     rows = [h + h[::-1] for h in half]
     return [[int(c, 16) if c != '.' else 0 for c in r] for r in rows]
 
+
+# ======================= Papoycore Fairy Boss (row 10-13, y=80..111) =======================
+# 4 frames of 32x32: tiles 160, 164, 168, 172
+def load_fairy_boss_frames():
+    p = os.path.join(os.path.dirname(__file__), "art", "sprites", "fairy_boss_4frames_32.png")
+    if os.path.exists(p):
+        import build_tic
+        w, h, rows, plte = build_tic.read_png(p)
+        pal = list(plte[:16]) if plte and len(plte) <= 16 else PAL
+        for y, row in enumerate(rows):
+            for x, c in enumerate(row):
+                if len(c) > 3 and c[3] >= 128:
+                    idx = build_tic.nearest(c[:3], pal)
+                    if idx:
+                        sheet[80 + y][x] = idx
+
+load_fairy_boss_frames()
+
+# ======================= Brambles (row 14, y=112..119) =======================
+# Tile 224: bramble intact (16x8)
+# Tile 226: bramble cracked (16x8)
+# Tile 228: bramble with rose intact (16x8)
+# Tile 230: bramble with rose cracked (16x8)
+BRAMBLE_1_INTACT = """
+..1f...1f...1f..
+.1e81.1e81.1e81.
+1899988999889981
+1945698456984591
+.189998899988981
+..1e81.1e81.1e81
+...1f...1f...1f.
+................
+"""
+
+BRAMBLE_1_CRACKED = """
+..1f........1f..
+.1e81..11..1e81.
+18991.1998889981
+19451..156984591
+.1891...19888981
+..11.....1e811e8
+..........1f..1f
+................
+"""
+
+BRAMBLE_ROSE_INTACT = """
+..1f...1a1..1f..
+.1e81.1ab1.1e81.
+1899988999889981
+1945698456984591
+.189998899988981
+..1e81.1e81.1e81
+...1f...1f...1f.
+................
+"""
+
+BRAMBLE_ROSE_CRACKED = """
+..1f........1a1.
+.1e81..11..1ab1.
+18991.1998889981
+19451..156984591
+.1891...19888981
+..11.....1e811e8
+..........1f..1f
+................
+"""
+
+put(BRAMBLE_1_INTACT.replace(" ", "."), 0, 112)
+put(BRAMBLE_1_CRACKED.replace(" ", "."), 16, 112)
+put(BRAMBLE_ROSE_INTACT.replace(" ", "."), 32, 112)
+put(BRAMBLE_ROSE_CRACKED.replace(" ", "."), 48, 112)
 
 # sprite bank (ids 256+): 32x32 beetle girl boss at (0,176) = id 352,
 # 24x24 medium at (32,176) = id 356, 64x64 game-over scene at (64,176) = id 360

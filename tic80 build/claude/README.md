@@ -109,3 +109,13 @@ python tests/run_analytics.py --seeds 20 --tables 30
 ```
 
 A simple bot plays thousands of generated tables and reports difficulty by level, wall piece, toy and goal. The bot doesn't aim, so treat its numbers as relative; human logs are the better guide.
+
+## Cheats & Special Modes
+
+- **Boss Rush Mode:** On the Title screen or Game Over screen, type `"idkfa"` on your keyboard, or press `Up, Up, Down, Down, Left, Right, Left, Right` on the D-pad.
+  - Alternates 1 normal level and 1 boss level (level 1 normal, level 2 boss, level 3 normal, level 4 boss...).
+  - Palette cycles every 2 stages to match the companion fairy's rainbow rotation.
+
+## Credits & Attribution
+
+- **Fairy Boss Sprites:** [Papoycore's Fairy](https://papoycore.itch.io/fairy) by papoycore, free asset pack. Palette-quantized and remapped to the TIC-80 16-color Fairy Night palette so hair, wings, and dress rotate through the companion fairy's rainbow cycle.

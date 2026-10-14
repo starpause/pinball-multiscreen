@@ -318,37 +318,87 @@ function BOOT()
     local _, _, nb2 = FR.get()
     trace(string.format("poo from below: balls %d->%d %s", nb, nb2, nb2 == nb and "ok (safe)" or "PROBLEM"))
   end
-  do -- the fairy level: 3 rings grow her, hitting the glowing fairy = blessing
+  do -- the fairy level: queen lands, evolves, shields with 5 fairies, devolves on defeat
     FR.new_game(7) FR.enter(9) FR.force_state("play")
     local t = FR.cur()
     local q = t.queen
-    local rings = {}
-    for _, o in ipairs(t.objs) do if o.queenRing then rings[#rings + 1] = o end end
-    for k = 1, 3 do
-      local r = rings[(k - 1) % 2 + 1]
-      b.x, b.y, b.vx, b.vy, b.noflip = r.x, r.y - 6, 0, 0.6, false
-      for i = 1, 160 do step(1, {}) if q.stage >= k then break end end
-      for i = 1, 150 do step(1, {}) end -- hold + ring cooldown, ball released
+    -- 1. Queen flies down and lands
+    for i = 1, 60 do
+      b.x, b.y, b.vx, b.vy = 75, 80, 0, 0
+      step(1, {})
+      if q.state == "landed" then break end
     end
-    local stageAfter = q.stage
+    local landedOk = q.state == "landed"
+
+    -- 2. Test bramble collision
+    local brambleCount0 = #t.brambles
+    local b1 = t.brambles[1]
+    b.x, b.y, b.vx, b.vy, b.noflip = b1.x, b1.y + 10, 0, -1.8, false
+    for i = 1, 30 do step(1, {}) if b1.hp <= 0 then break end end
+    local brambleBroke = b1.hp <= 0
+
+    -- 3. Hit landed queen -> enters evolving state, then becomes big
+    b.x, b.y, b.vx, b.vy, b.noflip = q.x, q.y + 14, 0, -1.8, false
+    for i = 1, 30 do step(1, {}) if q.state == "evolving" then break end end
+    for i = 1, 70 do
+      b.x, b.y, b.vx, b.vy = 75, 80, 0, 0
+      step(1, {})
+      if q.state == "big" then break end
+    end
+    local bigOk = q.state == "big"
+
+    -- 4. Hit big queen -> summons 5 circling minions
+    b.x, b.y, b.vx, b.vy, b.noflip = q.x, q.y + 18, 0, -1.8, false
+    for i = 1, 30 do step(1, {}) if q.state == "shield" then break end end
+    local shieldOk = q.state == "shield" and q.minions and #q.minions == 5
+
+    -- 5. Pop all 5 minions
+    for k = 1, 5 do
+      local m = q.minions[k]
+      for tries = 1, 5 do
+        if not m.alive then break end
+        b.x, b.y, b.vx, b.vy, b.noflip = m.x, m.y + 7, 0, -1.6, false
+        for i = 1, 12 do
+          step(1, {})
+          if not m.alive then break end
+        end
+      end
+    end
+    for i = 1, 15 do b.x, b.y, b.vx, b.vy = 75, 80, 0, 0 step(1, {}) end
+    local vulnOk = q.state == "vulnerable"
+
+    -- 6. Hit vulnerable queen -> devolves, defeated!
     FR.set_balls(2)
-    local hits = 0
-    for k = 1, 12 do
+    b.x, b.y, b.vx, b.vy, b.noflip = q.x, q.y + 18, 0, -1.8, false
+    for i = 1, 30 do step(1, {}) if q.state == "devolving" then break end end
+    for i = 1, 90 do
+      b.x, b.y, b.vx, b.vy = 75, 80, 0, 0
+      step(1, {})
       if q.gone then break end
-      b.x, b.y, b.vx, b.vy = q.x, q.y + 22, 0, -1.8
-      for i = 1, 40 do step(1, {}) end
-      hits = hits + 1
     end
+
     local _, _, nb = FR.get()
-    trace(string.format("fairy level: grew to stage %d, queen defeated after %d shots=%s, balls 2->%d, checkpoint level %d %s",
-      stageAfter, hits, tostring(q.gone == true), nb, FR.floor() + 1,
-      (stageAfter == 3 and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
+    trace(string.format("fairy boss: landed=%s bramble=%s big=%s shield=%s vuln=%s defeated=%s, balls 2->%d, checkpoint lv %d %s",
+      tostring(landedOk), tostring(brambleBroke), tostring(bigOk), tostring(shieldOk), tostring(vulnOk),
+      tostring(q.gone == true), nb, FR.floor() + 1,
+      (landedOk and brambleBroke and bigOk and shieldOk and vulnOk and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
     -- below the checkpoint the drain is guarded
     FR.enter(5) FR.force_state("play")
     b.x, b.y, b.vx, b.vy = 75, 118, 0, 1.0
     for i = 1, 60 do step(1, {}) end
     trace(string.format("protected level 6: ball after centre drain attempt y=%.0f (%s)", b.y,
       (select(4, FR.get()) == 5 and b.y < 136) and "guarded ok" or "DRAINED"))
+  end
+  do -- boss rush mode: lv1 normal, lv2 boss, lv3 normal, lv4 boss
+    FR.boss_rush(true)
+    local t0 = FR.generate(0)
+    local t1 = FR.generate(1)
+    local t2 = FR.generate(2)
+    local t3 = FR.generate(3)
+    trace(string.format("boss rush mode: lv1 bonus=%s lv2 bonus=%s lv3 bonus=%s lv4 bonus=%s %s",
+      tostring(t0.bonus == true), tostring(t1.bonus == true), tostring(t2.bonus == true), tostring(t3.bonus == true),
+      (not t0.bonus and t1.bonus and not t2.bonus and t3.bonus) and "ok" or "PROBLEM"))
+    FR.boss_rush(false)
   end
   trace("table codes: level1=" .. FR.tcode(0) .. " level10=" .. FR.tcode(9))
   do -- weak climbs: a shot that barely leaves the top must arrive with
@@ -519,9 +569,16 @@ function BOOT()
   FR.grant_reward("MULTIBALL") FR.grant_reward("FAIRY")
   step(24, {})
   shot("action")
-  -- the fairy level, grown, and the game-over screen
+  -- the fairy level and the game-over screen
   FR.new_game(7) FR.enter(9) FR.force_state("play")
-  FR.cur().queen.stage = 3
+  local q = FR.cur().queen
+  q.state = "shield"
+  q.x, q.y = 75, 44
+  q.minions = {}
+  for i = 1, 5 do
+    local a = (i - 1) * (2 * math.pi / 5)
+    q.minions[i] = {alive = true, x = q.x + math.cos(a) * 22, y = q.y + math.sin(a) * 22}
+  end
   b.x, b.y = 40, 100
   shot("fairy_level")
   FR.new_game(7) FR.enter(3)

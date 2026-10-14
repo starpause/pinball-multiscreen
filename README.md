@@ -26,6 +26,9 @@ python build.py
 
 Then load `fairy_ring.tic` in TIC-80. Controls follow Revenge of the 'Gator: any **D-pad** direction is the left flipper, **A/B** (Z/X keys) is the right flipper, and **X/Y** (A/S keys) nudges. Headless tests: `python tests/run_tests.py <outdir>` (needs TIC-80 at `C:\Program Files\tic80-v1.3-win.exe`, or set `TIC80`).
 
+## Credits & Attribution
+- Fairy boss assets adapted from [Papoycore's Fairy](https://papoycore.itch.io/fairy) by papoycore.
+
 ## Not in this repo
 
 ROMs, APKs, save files and archives are excluded (see `.gitignore`), as are the assets and class dump we extracted from the Infinity Pinball APK. The research material is here for study and reference; the games belong to their respective owners.

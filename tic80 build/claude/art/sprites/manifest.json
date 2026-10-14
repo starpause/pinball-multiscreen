@@ -271,6 +271,22 @@
   "sha1": "3f4130f23e309e500055d64523949c942bb44efd",
   "tile_id": 256
  },
+ "fairy_boss_4frames_32": {
+  "x": 0,
+  "y": 80,
+  "w": 128,
+  "h": 32,
+  "sha1": "e32230da69a6fc426d95e565c48b9664c9b4a510",
+  "tile_id": 160
+ },
+ "brambles_16x8": {
+  "x": 0,
+  "y": 112,
+  "w": 64,
+  "h": 8,
+  "sha1": "13badf51e86c3c18f870cc3fad7cf578014fd3bc",
+  "tile_id": 224
+ },
  "queen_red_lg_32": {
   "x": 0,
   "y": 176,
