@@ -381,7 +381,7 @@ function BOOT()
     trace(string.format("fairy boss: landed=%s bramble=%s spawn=%s shield=%s vuln=%s devolve=%s defeated=%s, balls 2->%d, checkpoint lv %d %s",
       tostring(landedOk), tostring(brambleBroke), tostring(evolveSpawnOk), tostring(shieldOk), tostring(vulnOk),
       tostring(devolveOk), tostring(q.gone == true), nb, FR.floor() + 1,
-      (landedOk and brambleBroke and evolveSpawnOk and shieldOk and vulnOk and devolveOk and q.gone and nb == 3 and FR.floor() == 9) and "ok" or "PROBLEM"))
+      (landedOk and brambleBroke and evolveSpawnOk and shieldOk and vulnOk and devolveOk and q.gone and nb == 2 and FR.floor() == 9) and "ok" or "PROBLEM"))
     -- below the checkpoint the drain is guarded
     FR.enter(5) FR.force_state("play")
     b.x, b.y, b.vx, b.vy = 75, 118, 0, 1.0
@@ -389,15 +389,17 @@ function BOOT()
     trace(string.format("protected level 6: ball after centre drain attempt y=%.0f (%s)", b.y,
       (select(4, FR.get()) == 5 and b.y < 136) and "guarded ok" or "DRAINED"))
   end
-  do -- boss rush mode: lv1 normal, lv2 boss, lv3 normal, lv4 boss
+  do -- boss rush mode: lv1 normal, lv2 boss, lv3 normal, lv4 boss, 1 ball start
     FR.boss_rush(true)
+    FR.new_game(1)
+    local _, _, brBalls = FR.get()
     local t0 = FR.generate(0)
     local t1 = FR.generate(1)
     local t2 = FR.generate(2)
     local t3 = FR.generate(3)
-    trace(string.format("boss rush mode: lv1 bonus=%s lv2 bonus=%s lv3 bonus=%s lv4 bonus=%s %s",
-      tostring(t0.bonus == true), tostring(t1.bonus == true), tostring(t2.bonus == true), tostring(t3.bonus == true),
-      (not t0.bonus and t1.bonus and not t2.bonus and t3.bonus) and "ok" or "PROBLEM"))
+    trace(string.format("boss rush mode: lv1 bonus=%s lv2 bonus=%s lv3 bonus=%s lv4 bonus=%s, balls=%d %s",
+      tostring(t0.bonus == true), tostring(t1.bonus == true), tostring(t2.bonus == true), tostring(t3.bonus == true), brBalls,
+      (not t0.bonus and t1.bonus and not t2.bonus and t3.bonus and brBalls == 1) and "ok" or "PROBLEM"))
     FR.boss_rush(false)
   end
   trace("table codes: level1=" .. FR.tcode(0) .. " level10=" .. FR.tcode(9))

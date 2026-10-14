@@ -771,7 +771,14 @@ local function add(p, x, y)
 end
 -- the fairy: follows the ball; when summoned (BUDS) she glows and
 -- flutters around the table, hit her with a ball for a big bonus
-local fairy = {x = 120, y = 60, tx = 120, ty = 60, mode = "follow", t = 0, tier = 0}
+local fairy = {x = CX + 14, y = 115, tx = CX + 14, ty = 115, mode = "follow", t = 0, tier = 0}
+
+local function boss_active()
+  for _, t in pairs(tables) do
+    if t.bonus and t.queen and not t.queen.gone then return true end
+  end
+  return false
+end
 
 local bake -- forward
 
@@ -808,9 +815,11 @@ local function new_game(seed)
   memcpy(0x3FC0, GAME_PAL, 48) -- back from the game-over palettes
   masterSeed = seed or ((tstamp() * 31 + time() // 1) % 1679615) + 1
   tables, floorIdx, best, run = {}, 0, 0, {}
-  score, balls, mult, saver = 0, 3, 1, 0
+  score, balls, mult, saver = 0, bossRush and 1 or 3, 1, 0
   fairy.tier = 0
   fairy.mode = "follow"
+  fairy.x, fairy.y = CX + 14, 115
+  fairy.tx, fairy.ty = CX + 14, 115
   enter_table(0)
   serve()
 end
@@ -837,8 +846,12 @@ local function grant_reward(rw)
   elseif rw == "JACKPOT" then add(5000 * (cur.idx + 1))
   elseif rw == "MULTIBALL" then spawn_extra(CX - 10, -0.4) spawn_extra(CX + 10, 0.4)
   elseif rw == "FAIRY" then
-    fairy.mode, fairy.t = "bonus", 20 * 60
-    fairy.tx, fairy.ty = CX, 40
+    if not boss_active() then
+      fairy.mode, fairy.t = "bonus", 20 * 60
+      fairy.tx, fairy.ty = CX, 40
+    else
+      return
+    end
   end
   say(REWARD_LABEL[rw] .. "!")
 end
@@ -964,9 +977,14 @@ local function toy_collide()
         local dx, dy = ball.x - cx, ball.y - cy
         local d = math.sqrt(dx*dx + dy*dy)
         local r = 3 + BR
-        if d < r and d > 0.01 then
-          local nx, ny = dx / d, dy / d
-          ball.x, ball.y = cx + nx * (r + 0.5), cy + ny * (r + 0.5)
+        if (d < r and d > 0.01) or (ball.vy < 0 and math.abs(ball.x - b.x) <= b.w / 2 + BR and ball.y < b.y + r and (ball.py or ball.y) >= b.y - 2) then
+          local nx, ny
+          if d > 0.01 and dy >= 0 then
+            nx, ny = dx / d, dy / d
+          else
+            nx, ny = 0, 1
+          end
+          ball.y = math.max(ball.y, cy + r + 0.5)
           return {kind = "bramble", bramble = b}, nx, ny
         end
       end
@@ -1068,8 +1086,23 @@ local function sensors()
       shake = 4
     end
   end
-  if cur.updraft > 0 and math.abs(ball.x - CX) < 8 and ball.y > 8 and ball.y < 84 then
-    ball.vy = math.max(-4.6, ball.vy - 0.35)
+  if cur.updraft and (cur.updraft == true or cur.updraft > 0) and math.abs(ball.x - CX) <= 12 and ball.y > 8 and ball.y < 88 then
+    local dx = ball.x - CX
+    ball.x = ball.x - dx * 0.12
+    if ball.vy > -4.8 then
+      ball.vy = -4.8
+      shake = math.max(shake, 1)
+    end
+    if dx < -1.5 then
+      ball.vx = math.max(ball.vx, 0.7)
+    elseif dx > 1.5 then
+      ball.vx = math.min(ball.vx, -0.7)
+    else
+      if math.abs(ball.vx) < 0.3 then
+        ball.vx = (ball.x <= CX and 0.5 or -0.5)
+      end
+    end
+    if frame % 4 == 0 then sparkle(ball.x, ball.y, 2, true) end
   end
   -- poo piles: a ball rolling down into one is lost (not during multiball,
   -- not when a post is guarding the drain)
@@ -1364,6 +1397,20 @@ local function transitions()
     return
   end
   if ball.y < -6 then -- out of the top: climb
+    if cur.brambles and #cur.brambles > 0 then
+      for _, b in ipairs(cur.brambles) do
+        if b.hp > 0 and math.abs(ball.x - b.x) <= (b.w / 2 + BR) then
+          b.hp = b.hp - 1
+          sparkle(b.x, b.y, 6, true)
+          shake = 4
+          add(500, b.x, b.y)
+          say(b.hp <= 0 and "BRAMBLE BROKEN!" or "BRAMBLE BLOCKS PATH!", 40)
+          ball.y = math.max(14, b.y + BR + 2)
+          ball.vy = math.max(2.5, math.abs(ball.vy) * 0.8)
+          return
+        end
+      end
+    end
     end_multiball()
     local nxt = cur.idx + 1
     local fresh = not (tables[nxt] and tables[nxt].visited)
@@ -1375,6 +1422,8 @@ local function transitions()
     ball.noflip, ball.above = true, false
     ball.vy = math.min(ball.vy, LAUNCH_VY - 0.3)        -- always arrive with momentum
     ball.vx = math.max(-1.2, math.min(1.2, ball.vx))
+    fairy.y = WH + 14
+    fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
     lvstat(nxt).arrived = lvstat(nxt).t                 -- for bounce-back stats
     if fresh then -- a new level: score + a burst of sparkles at the ball
       add(1000 * nxt, ball.x, ball.y - 6)
@@ -1403,6 +1452,8 @@ local function transitions()
       ball.y = ball.y - WH
       ball.vx, ball.vy = ball.vx * 0.5, ball.vy * 0.1 -- Infinity's softened drop
       cur.center = math.max(cur.center, 5 * 60)       -- mercy post
+      fairy.y = -14
+      fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
       say("DOWN TO LEVEL " .. cur.idx + 1)
     end
   end
@@ -1449,9 +1500,14 @@ game_over = function()
 end
 
 local cheatKeySeq, cheatBtnSeq = {9, 4, 11, 6, 1}, {0, 0, 1, 1, 2, 3, 2, 3}
-local cheatKeyIdx, cheatBtnIdx = 1, 1
+local cheatKeyIdx, cheatBtnIdx, cheatTimeout = 1, 1, 0
 
 local function check_cheat_input()
+  if cheatTimeout > 0 then
+    cheatTimeout = cheatTimeout - 1
+    if cheatTimeout <= 0 then cheatBtnIdx = 1 end
+  end
+
   for k = 1, 26 do
     if keyp(k) then
       if k == cheatKeySeq[cheatKeyIdx] then
@@ -1472,14 +1528,17 @@ local function check_cheat_input()
     if btnp(b) then
       if b == cheatBtnSeq[cheatBtnIdx] then
         cheatBtnIdx = cheatBtnIdx + 1
+        cheatTimeout = 180
         if cheatBtnIdx > #cheatBtnSeq then
           cheatBtnIdx = 1
+          cheatTimeout = 0
           bossRush = not bossRush
           shake = 14
           say(bossRush and "BOSS RUSH ACTIVATED!" or "NORMAL MODE ACTIVATED!", 180)
         end
       else
         cheatBtnIdx = (b == cheatBtnSeq[1]) and 2 or 1
+        cheatTimeout = (cheatBtnIdx > 1) and 180 or 0
       end
     end
   end
@@ -1596,15 +1655,15 @@ local function update()
         if q.t % 4 == 0 then sparkle(q.x + (q.t % 7 - 3) * 4, q.y + (q.t % 5 - 2) * 4, 4, true) end
         if q.t <= 0 then
           q.state = "fly_out"
-          cur.updraft = 30 * 60
+          cur.updraft = true
+          cur.updraftPerm = true
           cur.brambles = {}
           for k = 1, 8 do sparkle(CX + (k - 4.5) * 10, 10, 8, true) end
-          balls = math.min(5, balls + 1)
           floorIdx = math.max(floorIdx, cur.idx)
           local curTier = q.tier or (cur.idx // (bossRush and 2 or 10))
           fairy.tier = math.max(fairy.tier or 0, curTier + 1)
           add(50000 * (curTier + 1), q.x, q.y)
-          say("FAIRY QUEEN DEFEATED! +1 BALL, CHECKPOINT", 200)
+          say("FAIRY QUEEN DEFEATED! CHECKPOINT", 200)
         end
       elseif q.state == "fly_out" then
         q.y = q.y - 1.8
@@ -1612,6 +1671,8 @@ local function update()
         if frame % 3 == 0 then sparkle(q.x, q.y + 4, 3, true) end
         if q.y < -20 then
           q.gone = true
+          fairy.x, fairy.y = q.x, -14
+          fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
         end
       end
     end
@@ -1619,7 +1680,7 @@ local function update()
   if cur.posts > 0 then cur.posts = cur.posts - 1 end
   if (cur.holeCool or 0) > 0 then cur.holeCool = cur.holeCool - 1 end
   if cur.center > 0 and not cur.bonus then cur.center = cur.center - 1 end
-  if cur.updraft > 0 then cur.updraft = cur.updraft - 1 end
+  if type(cur.updraft) == "number" and not cur.updraftPerm and cur.updraft > 0 then cur.updraft = cur.updraft - 1 end
   if saver > 0 and state == "play" then saver = saver - 1 end
   if fairy.mode == "bonus" then
     fairy.t = fairy.t - 1
@@ -1931,9 +1992,9 @@ local function draw_world(sx, sy)
                   (cur.center < 120 and p.y > 100 and not cur.bonus)
     if not blink or frame % 8 < 5 then spr(30, p.x - 4 + sx, p.y - 4 + sy, 0) end
   end
-  if cur.updraft > 0 then
+  if cur.updraft and (cur.updraft == true or cur.updraft > 0) then
     for y = 12, 80, 10 do
-      local oy = (y - frame) % 70 + 12 + sy
+      local oy = (y - frame * 2) % 70 + 12 + sy
       spr(28, CX - 4 + sx, oy, 0)
     end
   end
@@ -2044,7 +2105,7 @@ local function draw_world(sx, sy)
     end
   end
   local fy = fairy.y + math.sin(frame / 20) * 2
-  if cur.queen and not cur.queen.gone then return end -- she is the one on the perch
+  if boss_active() then return end
   fairy_colors(fairy.tier)
   if fairy.mode == "bonus" then
     -- summoned: golden glow, blinking when about to leave
@@ -2131,7 +2192,11 @@ local function draw_hud(sx, sy)
       if k == 0 then rectb(228 + sx, ty - 1, 8, 6, C_WHITE) end
     end
   end
-  if msgT > 0 and (msgT > 30 or frame % 8 < 4) then
+  if cheatBtnIdx > 1 then
+    local entered = string.sub("UUDDLRLR", 1, cheatBtnIdx - 1)
+    local dots = string.rep(".", (frame // 12) % 3 + 1)
+    print(entered .. dots, hx, 127 + sy, C_GOLD, false, 1, true)
+  elseif msgT > 0 and (msgT > 30 or frame % 8 < 4) then
     print(msg, hx, 127 + sy, C_GOLD, false, 1, true)
   elseif state == "ready" and frame % 40 < 30 then
     print("FLIP TO LAUNCH", hx, 127 + sy, C_LILAC, false, 1, true)
@@ -2141,6 +2206,10 @@ local function draw_hud(sx, sy)
     print("FAIRY RING", CX - 30, 54, C_GOLD)
     if bossRush then
       print("BOSS RUSH", CX - 27, 40, (frame // 10) % 2 == 0 and C_GOLD or C_RED)
+    elseif cheatBtnIdx > 1 then
+      local entered = string.sub("UUDDLRLR", 1, cheatBtnIdx - 1)
+      local dots = string.rep(".", (frame // 12) % 3 + 1)
+      print(entered .. dots, CX - 20, 40, C_GOLD)
     end
     if frame % 40 < 28 then print("PRESS ANY BUTTON", CX - 47, 72, C_LILAC) end
   end
@@ -2267,6 +2336,7 @@ function BDR(row)
 end
 
 local function update_fairy()
+  if boss_active() then return end
   local speed = 0.04
   if fairy.mode == "bonus" then
     -- flutter between random spots over the playfield
@@ -2275,8 +2345,13 @@ local function update_fairy()
       fairy.ty = 16 + math.random() * 60
     end
     speed = 0.03
-  elseif state == "play" then fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
-  else fairy.tx, fairy.ty = CX + 40 + math.cos(frame / 70) * 10, 30 + math.sin(frame / 50) * 6 end
+  elseif state == "play" then
+    fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
+    speed = (fairy.y < 0 or fairy.y > WH) and 0.12 or 0.08
+  else
+    fairy.tx, fairy.ty = ball.x + 14 + math.cos(frame / 40) * 4, ball.y - 14 + math.sin(frame / 30) * 3
+    speed = 0.08
+  end
   fairy.x = fairy.x + (fairy.tx - fairy.x) * speed
   fairy.y = fairy.y + (fairy.ty - fairy.y) * speed
 end
@@ -2288,6 +2363,8 @@ function BOOT()
   enter_table(0)
   serve()
   state = "title"
+  fairy.x, fairy.y = ball.x + 14, ball.y - 14
+  fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
 end
 
 function TIC()
