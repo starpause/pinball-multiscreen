@@ -2487,7 +2487,7 @@ local function draw_stats()
   life("TOP LEVEL", tostring(pmem(PM_BEST)))
   life("AVG LEVEL", string.format("%.1f", pmem(PM_SUMLV) / math.max(1, runs)))
   life("PLAY TIME", string.format("%dm", pmem(PM_SECS) // 60))
-  life("LOST: POO", tostring(pmem(PM_POO)), C_RED)
+  life("LOST: MUD", tostring(pmem(PM_POO)), C_RED)
   life("LOST: LV1", tostring(pmem(PM_DRAIN)), C_RED)
   -- the deadliest levels: balls lost per visit
   ly = ly + 4
