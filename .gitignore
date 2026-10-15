@@ -12,6 +12,7 @@ research/2022 Infinity Pinball (Android)/1.2 Split/
 # python / tooling noise
 __pycache__/
 *.pyc
+scratch/
 tic80 build/claude/tests/out/
 tic80 build/claude/out/
 

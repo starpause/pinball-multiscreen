@@ -42,10 +42,9 @@ local KICKS = {
   add   = {bumper = 2.0, sling = 2.0},  -- Pokemon: +$0200 along the normal
   reset = {bumper = 2.2, sling = 1.6},  -- Infinity: 18.75 / 12.5 u/s
 }
-local KICK_POST   = 1.2
+local KICK_POST, LAUNCH_VY = 1.2, -2.4
 -- scales Pokemon's flipper lever impulse; global so tests can sweep it
 TUNE = {flip = 0.6, kick = "add"}
-local LAUNCH_VY   = -2.4
 
 -- FAIRY NIGHT palette indices (the palette ships in the sprite sheet)
 local C_KEY, C_OUT, C_FLOOR, C_FLOORL = 0, 1, 2, 3
@@ -57,12 +56,24 @@ local C_GOLD, C_CYAN, C_LILAC, C_WHITE = 12, 13, 14, 15
 local EMPTY, WALL, SLING = 0, 1, 2
 
 -- ============================ input ============================
--- Revenge of the 'Gator controls: any D-PAD direction = left flipper,
--- A or B (Z / X keys) = right flipper. Nudge: X or Y button (A / S keys).
+-- Default controls:
+-- D-PAD (ESDF or Arrows/Gamepad): left flipper (nudge direction when nudging)
+-- A / B (JK or Z/X/Gamepad): right flipper
+-- X / Y (Space/Shift or A/Gamepad): tilt nudge
 local vpad = nil -- the test harness replaces this with a table of booleans
-local function pad(i)
-  if vpad then return vpad[i] or false end
-  return btn(i)
+local pad, padp
+do
+  local PAD_KEYS = {[0]=5, [1]=4, [2]=19, [3]=6, [4]=10, [5]=11, [6]=48, [7]=64}
+  function pad(i)
+    if vpad then return vpad[i] or false end
+    local b = (i == 7) and (btn(7) and not key(19)) or btn(i)
+    return b or (PAD_KEYS[i] ~= nil and key(PAD_KEYS[i])) or false
+  end
+  function padp(i)
+    if vpad then return vpad[i] or false end
+    local b = (i == 7) and (btnp(7) and not key(19)) or btnp(i)
+    return b or (PAD_KEYS[i] ~= nil and keyp(PAD_KEYS[i])) or false
+  end
 end
 local function leftHeld()  return pad(0) or pad(1) or pad(2) or pad(3) end
 local function rightHeld() return pad(4) or pad(5) end
@@ -1563,7 +1574,7 @@ local function check_cheat_input()
   end
 
   for b = 0, 3 do
-    if btnp(b) then
+    if padp(b) then
       if b == cheatBtnSeq[cheatBtnIdx] then
         cheatBtnIdx = cheatBtnIdx + 1
         cheatTimeout = 180
@@ -1598,7 +1609,7 @@ local function update()
   if state == "title" then
     if not vpad then
       for i = 0, 5 do
-        if btnp(i) then
+        if padp(i) then
           if i >= 4 or (cheatBtnIdx == 1 and not (i == 0)) then
             new_game()
             break
@@ -1613,15 +1624,15 @@ local function update()
     if not vpad and overT > 45 then
       -- D-pad: same tables again; A/B: brand new tables; X/Y: stats page
       if cheatBtnIdx == 1 then
-        for i = 0, 3 do if btnp(i) then new_game(masterSeed) return end end
+        for i = 0, 3 do if padp(i) then new_game(masterSeed) return end end
       end
-      if btnp(4) or btnp(5) then new_game() return end
-      if btnp(6) or btnp(7) then state = "stats" end
+      if padp(4) or padp(5) then new_game() return end
+      if padp(6) or padp(7) then state = "stats" end
     end
     return
   end
   if state == "stats" then
-    if not vpad and (btnp(6) or btnp(7)) then state = "over" end
+    if not vpad and (padp(6) or padp(7)) then state = "over" end
     return
   end
   if state == "play" then lvstat(cur.idx).t = lvstat(cur.idx).t + 1 end
