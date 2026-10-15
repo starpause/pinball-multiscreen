@@ -15,6 +15,7 @@ __pycache__/
 scratch/
 tic80 build/claude/tests/out/
 tic80 build/claude/out/
+tic80 build/claude/logs/*.mp4
 
 # OS / editor noise
 Thumbs.db
