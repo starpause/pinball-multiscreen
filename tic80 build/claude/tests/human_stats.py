@@ -18,20 +18,28 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(HERE), "logs", "runlog.txt")
     runs = []
     for line in open(path, encoding="utf-8"):
-        m = re.search(r"RUNLOG seed=(\S+) best=(\d+) score=(\d+)(.*)", line)
+        m = re.search(r"RUNLOG seed=(\S+) best=(\d+) score=(\d+)(?: time=(\d+)s)?\s*(.*)", line)
         if not m:
             continue
+        seed = m.group(1)
+        best = int(m.group(2))
+        score = int(m.group(3))
+        time_sec = int(m.group(4)) if m.group(4) else None
+        level_str = m.group(5)
         levels = {}
         for lv, secs, loss, drop, bb, dc, do, code in re.findall(
-                r"(\d+):(\d+)s/(\d+)loss/(\d+)drop(?:\((\d+)bb,(\d+)c,(\d+)o\)/(\w+))?", m.group(4)):
+                r"(\d+):(\d+)s/(\d+)loss/(\d+)drop(?:\((\d+)bb,(\d+)c,(\d+)o\)/(\w+))?", level_str):
             levels[int(lv)] = (int(secs), int(loss), int(drop), int(bb or 0), int(dc or 0), int(do or 0), code)
-        runs.append({"seed": m.group(1), "best": int(m.group(2)), "score": int(m.group(3)), "levels": levels})
+        if time_sec is None:
+            time_sec = sum(s for s, _, _, _, _, _, _ in levels.values())
+        runs.append({"seed": seed, "best": best, "score": score, "secs": time_sec, "levels": levels})
     if not runs:
         print("no RUNLOG lines yet in", path)
         return
-    print("%d runs  best level %d  avg level %.1f  best score %d" % (
+    avg_secs = sum(r["secs"] for r in runs) / len(runs)
+    print("%d runs  best level %d  avg level %.1f  best score %d  avg time %dm%02ds" % (
         len(runs), max(r["best"] for r in runs), sum(r["best"] for r in runs) / len(runs),
-        max(r["score"] for r in runs)))
+        max(r["score"] for r in runs), int(avg_secs // 60), int(avg_secs % 60)))
     agg = defaultdict(lambda: [0, 0, 0, 0, 0, 0, 0])  # visits, secs, losses, drops, bb, centre, outlane
     tables = []
     for r in runs:

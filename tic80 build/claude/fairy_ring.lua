@@ -1505,15 +1505,17 @@ local function pm_add(i, v) pmem(i, pmem(i) + v) end
 
 game_over = function()
   state, overT = "over", 0
-  local secs = 0
+  local totalFrames = 0
   for L, st in pairs(run) do
     if type(L) == "number" and L < 48 then
       pm_add(16 + L, st.loss)
       pm_add(64 + L, 1)
       pm_add(112 + L, st.t // 60)
-      secs = secs + st.t // 60
+      totalFrames = totalFrames + st.t
     end
   end
+  local secs = totalFrames // 60
+  run.secs = secs
   run.newHi = score > pmem(PM_HI)
   if run.newHi then pmem(PM_HI, score) end
   if best + 1 > pmem(PM_BEST) then pmem(PM_BEST, best + 1) end
@@ -1531,7 +1533,7 @@ game_over = function()
         st.drop, st.bb or 0, st.dc or 0, st.dout or 0, tcode(L))
     end
   end
-  trace(string.format("RUNLOG seed=%s best=%d score=%d %s", code4(masterSeed), best + 1, score,
+  trace(string.format("RUNLOG seed=%s best=%d score=%d time=%ds %s", code4(masterSeed), best + 1, score, secs,
     table.concat(lv, " ")))
 end
 
@@ -2421,6 +2423,13 @@ local function draw_over()
   end
   line("SCORE", tostring(score), run.newHi and C_GOLD or C_WHITE)
   line("LEVEL", tostring(best + 1))
+  local totalSecs = run.secs
+  if not totalSecs then
+    local tf = 0
+    for L, st in pairs(run) do if type(L) == "number" then tf = tf + st.t end end
+    totalSecs = tf // 60
+  end
+  line("TIME", string.format("%d:%02d", totalSecs // 60, totalSecs % 60))
   if bossRush then line("MODE", "BOSS RUSH", C_GOLD) end
   line("SEED", code4(masterSeed), C_FLOORL)
   y = y + 3
