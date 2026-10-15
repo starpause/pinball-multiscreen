@@ -45,7 +45,7 @@ local KICKS = {
 local KICK_POST   = 1.2
 -- scales Pokemon's flipper lever impulse; global so tests can sweep it
 TUNE = {flip = 0.6, kick = "add"}
-local LAUNCH_VY   = -2.9
+local LAUNCH_VY   = -2.4
 
 -- FAIRY NIGHT palette indices (the palette ships in the sprite sheet)
 local C_KEY, C_OUT, C_FLOOR, C_FLOORL = 0, 1, 2, 3
@@ -746,6 +746,7 @@ local holdT, holdObj, lostT, overT = 0, nil, 0, 0
 local msg, msgT = "", 0
 local shake, nudgeCool = 0, 0
 local tiltSavePending = 0
+local tiltWarn, tiltTimer, tiltDead = 0, 0, 0
 local frame = 0
 local touching, lastNx, lastNy = false, 0, 0
 local lflip, rflip = false, false
@@ -817,6 +818,7 @@ end
 
 local function serve()
   tiltSavePending = 0
+  if tiltDead > 0 then tiltDead, tiltWarn = 0, 0 end
   extras = {}
   ball.x, ball.y, ball.vx, ball.vy = CX, 129, 0, 0
   ball.noflip, ball.spin, ball.above = true, 0, false
@@ -832,6 +834,7 @@ local function new_game(seed)
   tables, floorIdx, best, run = {}, 0, 0, {}
   score, balls, mult, saver = 0, bossRush and 1 or 3, 1, 0
   tiltSavePending = 0
+  tiltWarn, tiltTimer, tiltDead = 0, 0, 0
   fairy.tier = 0
   fairy.mode = "follow"
   fairy.x, fairy.y = CX + 14, 115
@@ -954,7 +957,6 @@ local function capture(o, frames)
   ball.x, ball.y, ball.vx, ball.vy = o.x, o.y, 0, 0
   if tiltSavePending > 0 then
     say("TILT SAVE!", 60)
-    add(2500, ball.x, ball.y)
     for k = 1, 6 do sparkle(ball.x + (k - 3.5) * 3, ball.y, 4, true) end
     tiltSavePending = 0
   end
@@ -1111,17 +1113,17 @@ local function sensors()
   if cur.updraft and (cur.updraft == true or cur.updraft > 0) and math.abs(ball.x - CX) <= 12 and ball.y > 8 and ball.y < 88 then
     local dx = ball.x - CX
     ball.x = ball.x - dx * 0.12
-    if ball.vy > -3.5 then
-      ball.vy = -3.5
+    if ball.vy > -2.4 then
+      ball.vy = -2.4
       shake = math.max(shake, 1)
     end
     if dx < -1.5 then
-      ball.vx = math.max(ball.vx, 0.7)
+      ball.vx = math.max(ball.vx, 0.5)
     elseif dx > 1.5 then
-      ball.vx = math.min(ball.vx, -0.7)
+      ball.vx = math.min(ball.vx, -0.5)
     else
-      if math.abs(ball.vx) < 0.3 then
-        ball.vx = (ball.x <= CX and 0.5 or -0.5)
+      if math.abs(ball.vx) < 0.2 then
+        ball.vx = (ball.x <= CX and 0.4 or -0.4)
       end
     end
     if frame % 4 == 0 then sparkle(ball.x, ball.y, 2, true) end
@@ -1167,6 +1169,7 @@ local step_ball -- forward (defined below physics)
 local game_over -- forward (defined in game flow)
 local function physics()
   lflip, rflip = leftHeld(), rightHeld()
+  if tiltDead > 0 then lflip, rflip = false, false end
   for _, f in ipairs(cur.flippers) do
     -- (not `f.dir == 1 and lflip or rflip`: when lflip is false that
     -- expression falls through to rflip, so B/A moved both flippers)
@@ -1446,8 +1449,8 @@ local function transitions()
     enter_table(nxt)
     ball.y = ball.y + WH
     ball.noflip, ball.above = true, false
-    ball.vy = math.max(-3.5, math.min(ball.vy, -2.6))        -- arrive with steady momentum without overshooting
-    ball.vx = math.max(-1.2, math.min(1.2, ball.vx))
+    ball.vy = math.max(-2.5, math.min(ball.vy, -2.0))        -- arrive with steady momentum without overshooting
+    ball.vx = math.max(-1.0, math.min(1.0, ball.vx))
     fairy.x = math.max(30, math.min(120, ball.x))
     fairy.y = WH + 14
     fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
@@ -1477,6 +1480,10 @@ local function transitions()
       elseif ball.px > 45 and ball.px < 105 then ls.dc = (ls.dc or 0) + 1
       else ls.dout = (ls.dout or 0) + 1 end
       enter_table(cur.idx - 1)
+      if tiltDead > 0 then
+        tiltDead, tiltWarn = 0, 0
+        say("TILT CLEARED", 60)
+      end
       ball.y = ball.y - WH
       ball.vx, ball.vy = ball.vx * 0.5, ball.vy * 0.1 -- Infinity's softened drop
       cur.center = math.max(cur.center, 5 * 60)       -- mercy post
@@ -1835,28 +1842,59 @@ local function update()
       end
     end
   elseif state == "play" then
+    if tiltTimer > 0 then
+      tiltTimer = tiltTimer - 1
+      if tiltTimer == 0 and tiltWarn > 0 and tiltDead == 0 then
+        tiltWarn = tiltWarn - 1
+        if tiltWarn > 0 then tiltTimer = 120 end
+      end
+    end
+    if tiltDead > 0 then
+      tiltDead = tiltDead - 1
+      if tiltDead == 0 then
+        tiltWarn = 0
+        say("TILT CLEARED", 60)
+      end
+    end
     if nudgeHeld() and nudgeCool == 0 then
-      nudgeCool, shake = 24, 7
-      local dir = pad(2) and 1 or pad(3) and -1 or (ball.x < CX and 1 or -1)
-      local inDanger = math.abs(ball.x - CX) > 36 and ball.y > 75
-      if inDanger then
-        ball.vx = ball.vx + dir * 2.4
-        ball.vy = math.min(ball.vy * 0.4, -1.8)
-        tiltSavePending = 60
+      if tiltDead > 0 then
+        nudgeCool = 20
+        say("TILTED!", 30)
       else
-        ball.vx = ball.vx + dir * 1.5
-        ball.vy = math.min(ball.vy, ball.vy - 1.2)
+        nudgeCool = 24
+        tiltWarn = tiltWarn + 1
+        tiltTimer = 160
+        if tiltWarn >= 3 then
+          tiltDead = 420
+          shake = 16
+          say("TILT! FLIPPERS DEAD", 120)
+          tiltSavePending = 0
+        else
+          shake = 7
+          if tiltWarn == 2 then
+            say("TILT WARNING!", 50)
+          end
+          local dir = pad(2) and 1 or pad(3) and -1 or (ball.x < CX and 1 or -1)
+          local inDanger = math.abs(ball.x - CX) > 36 and ball.y > 75
+          if inDanger then
+            ball.vx = ball.vx + dir * 2.4
+            ball.vy = math.min(ball.vy * 0.4, -1.8)
+            tiltSavePending = 60
+          else
+            ball.vx = ball.vx + dir * 1.5
+            ball.vy = math.min(ball.vy, ball.vy - 1.2)
+          end
+          if touching then
+            ball.vx = ball.vx + lastNx * 2.0
+            ball.vy = ball.vy + lastNy * 2.0
+          end
+          sparkle(ball.x, ball.y, 4, true)
+        end
       end
-      if touching then
-        ball.vx = ball.vx + lastNx * 2.0
-        ball.vy = ball.vy + lastNy * 2.0
-      end
-      sparkle(ball.x, ball.y, 4, true)
     end
     if tiltSavePending > 0 then
       if (ball.y <= 74 and math.abs(ball.x - CX) <= 34) or (ball.y <= 88 and math.abs(ball.x - CX) <= 22) then
         say("TILT SAVE!", 60)
-        add(2500, ball.x, ball.y)
         for k = 1, 6 do sparkle(ball.x + (k - 3.5) * 3, ball.y, 4, true) end
         tiltSavePending = 0
       else
@@ -1880,6 +1918,7 @@ local function update()
     end
   elseif state == "lost" then
     tiltSavePending = 0
+    tiltDead, tiltWarn = 0, 0
     lostT = lostT - 1
     if lostT <= 0 then
       balls = balls - 1
@@ -2100,6 +2139,17 @@ local function draw_world(sx, sy)
                   (cur.center < 120 and p.y > 100 and not cur.bonus)
     if not blink or frame % 8 < 5 then spr(30, p.x - 4 + sx, p.y - 4 + sy, 0) end
   end
+  local q = cur.queen
+  if q and q.crater then
+    local cx, cy = q.crater.x + sx, q.crater.y + sy
+    circb(cx, cy, 7, C_KEY)
+    line(cx - 9, cy, cx - 4, cy, C_KEY)
+    line(cx + 4, cy, cx + 10, cy - 1, C_KEY)
+    line(cx - 3, cy + 3, cx - 6, cy + 7, C_KEY)
+    line(cx + 3, cy + 3, cx + 6, cy + 6, C_KEY)
+    line(cx - 2, cy - 3, cx - 5, cy - 6, C_KEY)
+    line(cx + 2, cy - 3, cx + 5, cy - 5, C_KEY)
+  end
   if cur.updraft and (cur.updraft == true or cur.updraft > 0) then
     for y = 12, 80, 10 do
       local oy = (y - frame) % 70 + 12 + sy
@@ -2125,17 +2175,6 @@ local function draw_world(sx, sy)
   for _, p in ipairs(cur.poo) do
     local guarded = (p.x == CX and (cur.center > 0 or protected())) or (p.x ~= CX and protected())
     if not guarded then spr(p.off > 0 and 127 or 126, p.x - 4 + sx, p.y - 5 + sy, 0) end
-  end
-  local q = cur.queen
-  if q and q.crater then
-    local cx, cy = q.crater.x + sx, q.crater.y + sy
-    circb(cx, cy, 7, C_KEY)
-    line(cx - 9, cy, cx - 4, cy, C_KEY)
-    line(cx + 4, cy, cx + 10, cy - 1, C_KEY)
-    line(cx - 3, cy + 3, cx - 6, cy + 7, C_KEY)
-    line(cx + 3, cy + 3, cx + 6, cy + 6, C_KEY)
-    line(cx - 2, cy - 3, cx - 5, cy - 6, C_KEY)
-    line(cx + 2, cy - 3, cx + 5, cy - 5, C_KEY)
   end
   if q and not q.gone then
     local bob = (q.state == "landed") and 0 or math.sin(frame / 18) * 1.5
@@ -2314,6 +2353,19 @@ local function draw_hud(sx, sy)
       rect(229 + sx, ty, 6, 4, c)
       if k == 0 then rectb(228 + sx, ty - 1, 8, 6, C_WHITE) end
     end
+  end
+  if tiltDead > 0 then
+    if (frame // 8) % 2 == 0 then
+      print("TILTED!", hx, 118 + sy, C_RED, false, 1, true)
+    else
+      print("DEAD FLIP", hx, 118 + sy, C_WHITE, false, 1, true)
+    end
+  elseif tiltWarn > 0 then
+    print("TILT", hx, 118 + sy, tiltWarn == 2 and C_PINK or C_GOLD, false, 1, true)
+    rect(hx + 24, 119 + sy, 14, 5, C_KEY)
+    rectb(hx + 24, 119 + sy, 14, 5, C_FLOORL)
+    if tiltWarn >= 1 then rect(hx + 26, 121 + sy, 4, 2, C_GOLD) end
+    if tiltWarn >= 2 then rect(hx + 32, 121 + sy, 4, 2, C_PINK) end
   end
   if cheatBtnIdx > 1 then
     local entered = string.sub("UUDDLRLR", 1, cheatBtnIdx - 1)
