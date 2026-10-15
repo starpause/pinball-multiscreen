@@ -66,13 +66,13 @@ do
   local PAD_KEYS = {[0]=5, [1]=4, [2]=19, [3]=6, [4]=10, [5]=11, [6]=48, [7]=64}
   function pad(i)
     if vpad then return vpad[i] or false end
-    local b = (i == 7) and (btn(7) and not key(19)) or btn(i)
-    return b or (PAD_KEYS[i] ~= nil and key(PAD_KEYS[i])) or false
+    if i == 7 and key(19) then return key(64) end
+    return btn(i) or (PAD_KEYS[i] ~= nil and key(PAD_KEYS[i])) or false
   end
   function padp(i)
     if vpad then return vpad[i] or false end
-    local b = (i == 7) and (btnp(7) and not key(19)) or btnp(i)
-    return b or (PAD_KEYS[i] ~= nil and keyp(PAD_KEYS[i])) or false
+    if i == 7 and key(19) then return keyp(64) end
+    return btnp(i) or (PAD_KEYS[i] ~= nil and keyp(PAD_KEYS[i])) or false
   end
 end
 local function leftHeld()  return pad(0) or pad(1) or pad(2) or pad(3) end
@@ -2444,20 +2444,18 @@ local function draw_over()
   if bossRush then line("MODE", "BOSS RUSH", C_GOLD) end
   line("SEED", code4(masterSeed), C_FLOORL)
   y = y + 3
-  local hard, easy, easyT = run_extremes()
-  if hard then line("TOUGH", "LV" .. hard + 1 .. " " .. run[hard].loss .. "L " .. run[hard].drop .. "D", C_RED) end
-  if easy then line("QUICK", "LV" .. easy + 1 .. " " .. string.format("%.1fs", easyT / 60), C_LIME) end
-  y = y + 3
   line("BEST", tostring(pmem(PM_HI)), C_GOLD)
-  line("AVG LV", string.format("%.1f", pmem(PM_SUMLV) / math.max(1, pmem(PM_RUNS))))
-  print("X/Y: STATS", x, y + 1, C_LILAC, false, 1, true)
+  local avg = math.floor(pmem(PM_SUMLV) / math.max(1, pmem(PM_RUNS)) + 0.5)
+  line("AVG LV", tostring(avg))
+  y = y + 3
+  print("NUDGE FOR STATS", x, y, C_LILAC, false, 1, true)
   -- continue, at the bottom, blinking
   if overT > 45 and frame % 40 < 28 then
     print("CONTINUE", x, py + ph - 24, C_GOLD, false, 1, true)
   end
   if overT > 45 then
-    print("D-PAD: SAME", x, py + ph - 16, C_WHITE, false, 1, true)
-    print("A/B: NEW TABLES", x, py + ph - 9, C_WHITE, false, 1, true)
+    print("L FLIP: REPLAY", x, py + ph - 16, C_WHITE, false, 1, true)
+    print("R FLIP: NEW TABLES", x, py + ph - 9, C_WHITE, false, 1, true)
   end
 end
 
@@ -2496,7 +2494,8 @@ local function draw_stats()
   life("RUNS", tostring(runs))
   life("HIGH SCORE", tostring(pmem(PM_HI)), C_GOLD)
   life("TOP LEVEL", tostring(pmem(PM_BEST)))
-  life("AVG LEVEL", string.format("%.1f", pmem(PM_SUMLV) / math.max(1, runs)))
+  local avgLevel = math.floor(pmem(PM_SUMLV) / math.max(1, runs) + 0.5)
+  life("AVG LEVEL", tostring(avgLevel))
   life("PLAY TIME", string.format("%dm", pmem(PM_SECS) // 60))
   life("LOST: MUD", tostring(pmem(PM_POO)), C_RED)
   life("LOST: LV1", tostring(pmem(PM_DRAIN)), C_RED)
@@ -2515,7 +2514,7 @@ local function draw_stats()
     ly = ly + 7
   end
   if #list == 0 then print("NONE YET", lx, ly, C_FLOORL, false, 1, true) end
-  if frame % 40 < 28 then print("X/Y: BACK", 6, 128, C_GOLD, false, 1, true) end
+  if frame % 40 < 28 then print("NUDGE: BACK", 6, 128, C_GOLD, false, 1, true) end
 end
 
 -- per-scanline palettes for the game-over art (rows 0-143 include the
@@ -2584,7 +2583,7 @@ FR = {
   generate = generate, paint = paint_table, enter = enter_table,
   new_game = new_game, physics = physics, update = update,
   transitions = transitions, ring_test = ring_test, sdf_test = sdf_test,
-  force_state = function(s) state = s end,
+  force_state = function(s) state = s if s == "over" then overT = 50 end end,
   extras = function() return extras end,
   fairy = fairy,
   grant_reward = function(rw) grant_reward(rw) end,
