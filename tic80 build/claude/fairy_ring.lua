@@ -433,12 +433,12 @@ local function generate(idx)
     -- 3. Second hit: summons shield ring of 5 circling fairies.
     -- 4. Destroying all 5 shield fairies makes queen core vulnerable.
     -- 5. Final hit devolves queen, spawns center updraft ramp, clears brambles, grants checkpoint + extra ball.
-    local landX = rng.int(CX - 18, CX + 18)
-    local landY = rng.int(38, 46)
+    local landX = CX - 26 + rng.int(53) -- 49 to 101, centered in playfield (CX=75)
+    local landY = 36 + rng.int(16)      -- 36 to 51
     t.queen = {
       x = landX, y = WH + 16,
       landX = landX, landY = landY,
-      apexY = landY - 14,
+      apexY = landY - 12,
       state = "fly_in",
       landed = false,
       flyDown = false,
@@ -745,6 +745,7 @@ local saver = 0
 local holdT, holdObj, lostT, overT = 0, nil, 0, 0
 local msg, msgT = "", 0
 local shake, nudgeCool = 0, 0
+local tiltSavePending = 0
 local frame = 0
 local touching, lastNx, lastNy = false, 0, 0
 local lflip, rflip = false, false
@@ -781,6 +782,7 @@ end
 local fairy = {x = CX + 14, y = 115, tx = CX + 14, ty = 115, mode = "follow", t = 0, tier = 0}
 
 local function boss_active()
+  if cur and cur.bonus then return true end
   for _, t in pairs(tables) do
     if t.bonus and t.queen and t.queen.landed and not t.queen.gone then return true end
   end
@@ -805,10 +807,16 @@ local function enter_table(idx)
   best = math.max(best, idx)
   lvstat(idx).enter = lvstat(idx).t
   for _, f in ipairs(cur.flippers) do f.s, f.prev, f.ds = 0, 0, 0 end
+  if cur.bonus and cur.queen and not cur.queen.landed and not cur.queen.gone then
+    cur.queen.x = math.max(44, math.min(106, fairy.x or CX))
+    cur.queen.y = WH + 14
+    cur.queen.flyDown = false
+  end
   bake()
 end
 
 local function serve()
+  tiltSavePending = 0
   extras = {}
   ball.x, ball.y, ball.vx, ball.vy = CX, 129, 0, 0
   ball.noflip, ball.spin, ball.above = true, 0, false
@@ -823,6 +831,7 @@ local function new_game(seed)
   masterSeed = seed or ((tstamp() * 31 + time() // 1) % 1679615) + 1
   tables, floorIdx, best, run = {}, 0, 0, {}
   score, balls, mult, saver = 0, bossRush and 1 or 3, 1, 0
+  tiltSavePending = 0
   fairy.tier = 0
   fairy.mode = "follow"
   fairy.x, fairy.y = CX + 14, 115
@@ -943,6 +952,12 @@ end
 
 local function capture(o, frames)
   ball.x, ball.y, ball.vx, ball.vy = o.x, o.y, 0, 0
+  if tiltSavePending > 0 then
+    say("TILT SAVE!", 60)
+    add(2500, ball.x, ball.y)
+    for k = 1, 6 do sparkle(ball.x + (k - 3.5) * 3, ball.y, 4, true) end
+    tiltSavePending = 0
+  end
   holdT, holdObj, state = frames, o, "hold"
 end
 
@@ -1433,6 +1448,7 @@ local function transitions()
     ball.noflip, ball.above = true, false
     ball.vy = math.max(-3.5, math.min(ball.vy, -2.6))        -- arrive with steady momentum without overshooting
     ball.vx = math.max(-1.2, math.min(1.2, ball.vx))
+    fairy.x = math.max(30, math.min(120, ball.x))
     fairy.y = WH + 14
     fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
     lvstat(nxt).arrived = lvstat(nxt).t                 -- for bounce-back stats
@@ -1442,6 +1458,7 @@ local function transitions()
     end
     say(cur.bonus and ("BOSS LEVEL " .. (nxt + 1)) or ("LEVEL " .. (nxt + 1)))
   elseif ball.y > WH + 6 then -- out of the bottom
+    tiltSavePending = 0
     if cur.idx <= floorIdx then
       if saver > 0 then
         say("BALL SAVED")
@@ -1463,6 +1480,7 @@ local function transitions()
       ball.y = ball.y - WH
       ball.vx, ball.vy = ball.vx * 0.5, ball.vy * 0.1 -- Infinity's softened drop
       cur.center = math.max(cur.center, 5 * 60)       -- mercy post
+      fairy.x = math.max(30, math.min(120, ball.x))
       fairy.y = -14
       fairy.tx, fairy.ty = ball.x + 14, ball.y - 14
       say("DOWN TO LEVEL " .. cur.idx + 1)
@@ -1607,7 +1625,7 @@ local function update()
       if q.state == "fly_in" then
         if not q.flyDown then
           q.y = q.y - 3.2
-          q.x = q.landX + math.sin(q.y / 8) * 1.5
+          q.x = q.x + (q.landX - q.x) * 0.08 + math.sin(q.y / 8) * 0.8
           if frame % 3 == 0 then sparkle(q.x, q.y + 4, 2, true) end
           if q.y <= q.apexY then
             q.y = q.apexY
@@ -1615,6 +1633,7 @@ local function update()
           end
         else
           q.y = q.y + 3.6
+          q.x = q.x + (q.landX - q.x) * 0.2
           if q.y >= q.landY then
             q.y = q.landY
             q.x = q.landX
@@ -1669,15 +1688,15 @@ local function update()
           say("DESTROY THE 5 SHIELD FAIRIES!", 90)
         end
       elseif q.state == "shield" or q.state == "vulnerable" then
-        -- Graceful, dramatic flight strictly above the kicker bumpers (y <= 52, kickers start at y = 72)
-        local targetX = CX + math.sin(frame / 45) * 32 + math.cos(frame / 75) * 8
-        local targetY = 38 + math.sin(frame / 32) * 10
+        -- Graceful, dramatic flight strictly inside designated area (media_1792021681665_d5417dfe.jpg)
+        local targetX = CX + math.sin(frame / 45) * 26 + math.cos(frame / 75) * 8
+        local targetY = 40 + math.sin(frame / 32) * 8
         q.x = q.x + (targetX - q.x) * 0.05 + (q.recoilX or 0)
         q.y = q.y + (targetY - q.y) * 0.05 + (q.recoilY or 0)
         q.recoilX = (q.recoilX or 0) * 0.88
         q.recoilY = (q.recoilY or 0) * 0.88
-        q.x = math.max(38, math.min(112, q.x))
-        q.y = math.max(22, math.min(52, q.y))
+        q.x = math.max(42, math.min(108, q.x))
+        q.y = math.max(30, math.min(52, q.y))
 
         if q.shieldInvuln and q.shieldInvuln > 0 then
           q.shieldInvuln = q.shieldInvuln - 1
@@ -1823,7 +1842,7 @@ local function update()
       if inDanger then
         ball.vx = ball.vx + dir * 2.4
         ball.vy = math.min(ball.vy * 0.4, -1.8)
-        say("TILT SAVE!", 40)
+        tiltSavePending = 60
       else
         ball.vx = ball.vx + dir * 1.5
         ball.vy = math.min(ball.vy, ball.vy - 1.2)
@@ -1833,6 +1852,16 @@ local function update()
         ball.vy = ball.vy + lastNy * 2.0
       end
       sparkle(ball.x, ball.y, 4, true)
+    end
+    if tiltSavePending > 0 then
+      if (ball.y <= 74 and math.abs(ball.x - CX) <= 34) or (ball.y <= 88 and math.abs(ball.x - CX) <= 22) then
+        say("TILT SAVE!", 60)
+        add(2500, ball.x, ball.y)
+        for k = 1, 6 do sparkle(ball.x + (k - 3.5) * 3, ball.y, 4, true) end
+        tiltSavePending = 0
+      else
+        tiltSavePending = tiltSavePending - 1
+      end
     end
     -- trap safety net (Infinity respawns a stuck ball after 5 s): if the
     -- ball stays inside a 16 px box for 4 s with no flipper held (so a
@@ -1850,6 +1879,7 @@ local function update()
       end
     end
   elseif state == "lost" then
+    tiltSavePending = 0
     lostT = lostT - 1
     if lostT <= 0 then
       balls = balls - 1
