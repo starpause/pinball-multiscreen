@@ -8,6 +8,7 @@ The design direction is **flippers on every screen**, as in Revenge of the 'Gato
 
 | Path | What |
 |---|---|
+| `release/` | Playable web build (`index.html`) and ready-to-distribute `fairy_ring.zip`. |
 | `tic80 build/claude/` | The current cart: `fairy_ring.lua`, `fairy_ring_sprites.png` → `fairy_ring.tic`. See its `ENGINE_NOTES.md`. |
 | `tic80 build/muse/` | An earlier prototype (superseded). |
 | `research/` | Reference games: manuals, screenshots, guides, devlogs and analysis. |
@@ -15,7 +16,7 @@ The design direction is **flippers on every screen**, as in Revenge of the 'Gato
 | `research/2022 Infinity Pinball (Android)/analysis/` | How Infinity Pinball generates its endless tables (README, logic and data reports, diagrams). |
 | `table-ideas/` | Table concepts and moodboards. |
 
-## Build the cart
+## Build the cart & Export
 
 The free TIC-80 build can't load `.lua` files directly, so the build script packs the code and sprite sheet into a `.tic`:
 
@@ -24,10 +25,26 @@ cd "tic80 build/claude"
 python build.py
 ```
 
-Then load `fairy_ring.tic` in TIC-80. Controls follow Revenge of the 'Gator: any **D-pad** direction is the left flipper, **A/B** (Z/X keys) is the right flipper, and **X/Y** (A/S keys) nudges. Headless tests: `python tests/run_tests.py <outdir>` (needs TIC-80 at `C:\Program Files\tic80-v1.3-win.exe`, or set `TIC80`).
+To build and export the playable HTML release bundle directly to `release/`:
+
+```bash
+python "tic80 build/claude/make_release.py"
+```
+
+## Controls
+
+Controls follow Revenge of the 'Gator:
+- **Left flipper**: **ESDF** (`E`, `S`, `D`, `F`) or any **D-pad** direction / Arrow keys
+- **Right flipper**: **JK** (`J`, `K`) or **A/B** (`Z` / `X` keys)
+- **Tilt nudge**: **Space** or **Shift** (or `A` key / Gamepad X/Y)
+
+Headless tests: `python tests/run_tests.py <outdir>` (needs TIC-80 at `C:\Program Files\tic80-v1.3-win.exe`, or set `TIC80`).
 
 ## Credits & Attribution
 - Fairy boss assets adapted from [Papoycore's Fairy](https://papoycore.itch.io/fairy) by papoycore.
+
+## License
+MIT License. See [LICENSE](LICENSE) for details.
 
 ## Not in this repo
 
